@@ -14,68 +14,62 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const audioPlayerRef = useRef(null);
+  const audioRef = useRef(null);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
+  // Play audio using the attached DOM audio element ref
+  const playAudioUrl = useCallback((audioUrl, textFallback) => {
+    if (!audioUrl && !textFallback) return;
+
+    if (audioUrl && audioRef.current) {
+      const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl}`;
+      audioRef.current.src = fullUrl;
+      audioRef.current.currentTime = 0;
+      
+      setIsSpeaking(true);
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('Autoplay blocked by browser policy:', err);
+          setIsSpeaking(false);
+          if (textFallback) {
+            speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
+          }
+        });
+      }
+    } else if (textFallback) {
+      speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
+    }
+  }, []);
+
+  // Fetch TTS audio and play it automatically via audioRef
   const handleListen = useCallback(async (textToSpeak) => {
     if (!textToSpeak) return;
 
-    // Stop any existing playback immediately
-    if (audioPlayerRef.current) {
-      try { 
-        audioPlayerRef.current.pause(); 
-        audioPlayerRef.current.currentTime = 0;
-      } catch (e) {}
-    }
+    // Stop any speech synthesis in progress
     speechService.stop();
 
     setIsLoadingAudio(true);
     try {
       const res = await voiceAPI.getTTSAudio(textToSpeak);
       if (res.data?.audio_url) {
-        const audioSrc = res.data.audio_url.startsWith('http')
-          ? res.data.audio_url
-          : `${API_BASE_URL}${res.data.audio_url}`;
-        
-        const audio = new Audio(audioSrc);
-        audioPlayerRef.current = audio;
-        setIsSpeaking(true);
-
-        audio.onended = () => {
-          setIsSpeaking(false);
-        };
-        audio.onerror = (err) => {
-          console.warn('Audio playback error, falling back to speech synthesis:', err);
-          setIsSpeaking(false);
-          speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
-        };
-
-        // Safe autoplay handling with Promise catch
-        try {
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-            await playPromise;
-          }
-        } catch (playErr) {
-          console.warn('Autoplay blocked by browser policy, using speech synthesis fallback:', playErr);
-          setIsSpeaking(false);
-          speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
-        }
+        playAudioUrl(res.data.audio_url, textToSpeak);
       } else {
         speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
       }
     } catch (err) {
-      console.warn('Voice API error, using browser speech synthesis:', err);
+      console.warn('Voice API error, falling back to speech synthesis:', err);
       speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
     } finally {
       setIsLoadingAudio(false);
     }
-  }, []);
+  }, [playAudioUrl]);
 
+  // Request guidance when student explicitly asks
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
     setIsGenerating(true);
@@ -99,11 +93,11 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         { sender: 'tutor', text: tutor_reply, speech_text }
       ]);
 
-      // Automatically play audio for this new AI tutor response
+      // Automatically play voice for this new AI response
       const textToRead = speech_text || tutor_reply;
       handleListen(textToRead);
 
-      // Save session
+      // Save lightweight session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
@@ -120,7 +114,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     }
   }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
 
-  // Load lesson detail and auto-play welcome greeting immediately
+  // Load lesson detail and trigger strictly ONE welcome greeting on mount
   useEffect(() => {
     let isMounted = true;
 
@@ -131,10 +125,10 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         setLesson(res.data);
         setActiveTab(0);
 
-        const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor. Take your time reading through each section, and let me know whenever you need help or have questions! 🌟`;
+        const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor for today's lesson on ${res.data.title}. Let's get started! 🌟`;
         setMessages([{ sender: 'tutor', text: welcomeText }]);
 
-        // Automatically trigger the greeting voice audio
+        // Automatically trigger greeting audio
         handleListen(welcomeText);
       } catch (e) {
         console.warn('Lesson load error:', e);
@@ -146,22 +140,23 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     return () => {
       isMounted = false;
       speechService.stop();
-      if (audioPlayerRef.current) {
-        try { audioPlayerRef.current.pause(); } catch (e) {}
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+          audioRef.current.src = '';
+        } catch (e) {}
       }
     };
   }, [lessonId, studentName, handleListen]);
 
+  // Tab selection updates active tab view only — no automatic spam requests
   const handleSelectTab = (tabIdx) => {
     setActiveTab(tabIdx);
-    triggerGuidance(tabIdx);
   };
 
   const handleGotIt = () => {
     if (activeTab < 4) {
-      const next = activeTab + 1;
-      setActiveTab(next);
-      triggerGuidance(next);
+      setActiveTab((prev) => prev + 1);
     } else {
       onProceedToQuiz(lesson);
     }
@@ -179,6 +174,14 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
 
   return (
     <div className="lesson-screen">
+      {/* Hidden audio element for reliable HTML5 DOM audio playback */}
+      <audio
+        ref={audioRef}
+        onEnded={() => setIsSpeaking(false)}
+        onError={() => setIsSpeaking(false)}
+        style={{ display: 'none' }}
+      />
+
       <div className="lesson-bar">
         <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }}>←</div>
         <div>
@@ -209,7 +212,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
                 gap: '4px'
               }}
             >
-              {isSpeaking ? '🔊 Speaking...' : isLoadingAudio ? '⏳ Loading...' : '🔊 Replay'}
+              {isSpeaking ? '🔊 Speaking...' : isLoadingAudio ? '⏳ Loading...' : '🔊 Listen'}
             </button>
           )}
           <div className="pill" style={{ background: '#F3E8FF', color: 'var(--grape)' }}>
@@ -227,7 +230,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
           <TutorChatStream messages={messages} />
           <TutorControls
             onGotIt={handleGotIt}
-            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section again in a simpler way?")}
+            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section in a simpler way?")}
             onAskQuestion={() => triggerGuidance(activeTab, "Can you give me an example to help me understand this better?")}
           />
         </div>
