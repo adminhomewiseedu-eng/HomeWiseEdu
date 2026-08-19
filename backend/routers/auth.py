@@ -1,0 +1,168 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Header
+from sqlalchemy.orm import Session
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+from typing import Optional, List
+import datetime
+from ..database import get_db
+from ..models import User, Child, ChildSubject, Subject
+from ..schemas import UserRegister, UserLogin, TokenResponse, ChildCreate, ChildOut
+from ..config import settings
+from ..utils.levels import get_level_label
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[int]:
+    if not authorization:
+        return None
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            return None
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload.get("id")
+    except Exception:
+        return None
+
+def verify_password(plain_password, hashed_password):
+    if hashed_password.startswith("plain:"):
+        return hashed_password == f"plain:{plain_password}"
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        return plain_password == hashed_password
+
+def get_password_hash(password):
+    try:
+        return pwd_context.hash(password)
+    except Exception:
+        return f"plain:{password}"
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+@router.post("/register", response_model=TokenResponse)
+def register(user_in: UserRegister, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == user_in.email.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    user = User(
+        email=user_in.email.lower(),
+        name=user_in.name,
+        password_hash=get_password_hash(user_in.password),
+        role=user_in.role or "parent",
+        avatar=user_in.name[0].upper() if user_in.name else "U"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": user.email, "id": user.id, "role": user.role})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "avatar": user.avatar
+        }
+    }
+
+@router.post("/login", response_model=TokenResponse)
+def login(creds: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == creds.email.lower()).first()
+    if not user or not verify_password(creds.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_access_token({"sub": user.email, "id": user.id, "role": user.role})
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+            "avatar": user.avatar
+        }
+    }
+
+@router.post("/add-child", response_model=ChildOut)
+def add_child(
+    child_in: ChildCreate, 
+    parent_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    auth_user_id: Optional[int] = Depends(get_current_user_id)
+):
+    pid = auth_user_id or parent_id or child_in.parent_id
+    if not pid:
+        raise HTTPException(status_code=401, detail="Authentication required to add child")
+    
+    parent = db.query(User).filter(User.id == pid).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent user not found")
+
+    edu_sys = child_in.education_system or "UK"
+    lvl = max(0, min(13, int(child_in.level)))
+    lvl_label = get_level_label(lvl, edu_sys)
+
+    child = Child(
+        parent_id=pid,
+        name=child_in.name,
+        age=child_in.age,
+        date_of_birth=child_in.date_of_birth,
+        education_system=edu_sys,
+        level=lvl,
+        grade=lvl_label,
+        avatar=child_in.avatar or "🦁",
+        xp=0,
+        streak_days=1,
+        active=True
+    )
+    db.add(child)
+    db.commit()
+    db.refresh(child)
+
+    # Enroll in selected subjects
+    subject_ids = child_in.subject_ids or []
+    if not subject_ids:
+        # Default enrollment: Mathematics, English Language, Science
+        default_subjs = db.query(Subject).filter(Subject.slug.in_(["mathematics", "english-language", "science"])).all()
+        subject_ids = [s.id for s in default_subjs]
+
+    for sid in subject_ids:
+        exists = db.query(ChildSubject).filter(ChildSubject.child_id == child.id, ChildSubject.subject_id == sid).first()
+        if not exists:
+            cs = ChildSubject(child_id=child.id, subject_id=sid)
+            db.add(cs)
+    
+    db.commit()
+    db.refresh(child)
+
+    return ChildOut(
+        id=child.id,
+        parent_id=child.parent_id,
+        name=child.name,
+        age=child.age,
+        date_of_birth=child.date_of_birth,
+        education_system=child.education_system,
+        level=child.level,
+        level_label=lvl_label,
+        grade=child.grade,
+        avatar=child.avatar,
+        xp=child.xp,
+        streak_days=child.streak_days,
+        enrolled_subjects=[
+            {"id": es.id, "subject_id": es.subject_id, "subject": es.subject} 
+            for es in child.enrolled_subjects
+        ],
+        completed_lessons_count=0,
+        progress_percentage=0
+    )
