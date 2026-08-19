@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import LessonDocView from '../organisms/LessonDocView';
 import TutorHeader from '../organisms/TutorHeader';
 import TutorChatStream from '../organisms/TutorChatStream';
@@ -13,6 +13,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const [messages, setMessages] = useState([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const audioPlayerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -20,42 +21,50 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
+  // Initialize single welcome message once on mount or when lesson changes
   useEffect(() => {
-    loadLesson();
+    let isMounted = true;
+
+    const initLesson = async () => {
+      try {
+        const res = await curriculumAPI.getLessonDetail(lessonId);
+        if (!isMounted) return;
+        setLesson(res.data);
+        setActiveTab(0);
+        
+        // Single clean welcome greeting (never auto-generate 5 simultaneous tab explanations)
+        setMessages([
+          {
+            sender: 'tutor',
+            text: `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor. Take your time reading through each section, and let me know whenever you need help or have questions! 🌟`
+          }
+        ]);
+      } catch (e) {
+        console.warn('Lesson load error:', e);
+      }
+    };
+
+    initLesson();
+
     return () => {
+      isMounted = false;
       speechService.stop();
       if (audioPlayerRef.current) {
         audioPlayerRef.current.pause();
       }
     };
-  }, [lessonId]);
+  }, [lessonId, studentName]);
 
-  const loadLesson = async () => {
+  const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
+    if (!currentLesson || isGenerating) return;
+    setIsGenerating(true);
+
     try {
-      const res = await curriculumAPI.getLessonDetail(lessonId);
-      setLesson(res.data);
-      
-      // Check for saved session
-      try {
-        const sessRes = await lessonAPI.getSession(child?.id || 1, lessonId);
-        if (sessRes.data && sessRes.data.messages && sessRes.data.messages.length > 0) {
-          setActiveTab(sessRes.data.current_tab || 0);
-          setMessages(sessRes.data.messages);
-          return;
-        }
-      } catch (sessErr) {
-        console.log('No prior session');
+      // If user provided a prompt, display user bubble immediately
+      if (prompt) {
+        setMessages((prev) => [...prev, { sender: 'me', text: prompt }]);
       }
 
-      triggerGuidance(0, null, res.data);
-    } catch (e) {
-      console.warn('Lesson load error:', e);
-    }
-  };
-
-  const triggerGuidance = async (tabIdx, prompt = null, currentLesson = lesson) => {
-    if (!currentLesson) return;
-    try {
       const res = await lessonAPI.getChatGuidance(
         child?.id || 1,
         currentLesson.id,
@@ -63,31 +72,32 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         prompt,
         messages
       );
-      const { tutor_reply, speech_text } = res.data;
-      const newMessages = [
-        ...messages,
-        ...(prompt ? [{ sender: 'me', text: prompt }] : []),
-        { sender: 'tutor', text: tutor_reply, speech_text },
-      ];
-      setMessages(newMessages);
 
-      // Save session
+      const { tutor_reply, speech_text } = res.data;
+      setMessages((prev) => [
+        ...prev,
+        { sender: 'tutor', text: tutor_reply, speech_text }
+      ]);
+
+      // Save lightweight session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
         day_number: dayNumber,
         current_tab: tabIdx,
-        messages: newMessages,
+        messages: [...messages, { sender: 'tutor', text: tutor_reply, speech_text }],
         is_completed: false
       }).catch(() => {});
 
     } catch (e) {
       console.warn('Tutor guidance error:', e);
+    } finally {
+      setIsGenerating(false);
     }
-  };
+  }, [lesson, isGenerating, child, messages, dayNumber]);
 
   const handleListen = async (textToSpeak) => {
-    if (!textToSpeak) return;
+    if (!textToSpeak || isSpeaking || isLoadingAudio) return;
     setIsLoadingAudio(true);
     try {
       const res = await voiceAPI.getTTSAudio(textToSpeak);
@@ -114,15 +124,12 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
 
   const handleSelectTab = (tabIdx) => {
     setActiveTab(tabIdx);
-    triggerGuidance(tabIdx);
   };
 
   const handleGotIt = () => {
-    setMessages((prev) => [...prev, { sender: 'me', text: "Got it! I've read this part. ✓" }]);
     if (activeTab < 4) {
       const next = activeTab + 1;
       setActiveTab(next);
-      triggerGuidance(next);
     } else {
       onProceedToQuiz(lesson);
     }
@@ -155,7 +162,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
           {latestTutorMsg && (
             <button 
               onClick={() => handleListen(latestTutorMsg.speech_text || latestTutorMsg.text)}
-              disabled={isLoadingAudio}
+              disabled={isLoadingAudio || isSpeaking}
               style={{
                 background: isSpeaking ? '#22C55E' : 'var(--grape)',
                 color: '#fff',
@@ -188,8 +195,8 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
           <TutorChatStream messages={messages} />
           <TutorControls
             onGotIt={handleGotIt}
-            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this again in a simpler way?")}
-            onAskQuestion={() => triggerGuidance(activeTab, "I have a question about this step.")}
+            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section again in a simpler way?")}
+            onAskQuestion={() => triggerGuidance(activeTab, "Can you give me an example to help me understand this better?")}
           />
         </div>
       </div>
