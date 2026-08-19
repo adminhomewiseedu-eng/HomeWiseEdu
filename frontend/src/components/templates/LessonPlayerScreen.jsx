@@ -14,6 +14,9 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Explicit ref to track initial mount and prevent tab explanation race conditions
+  const isFirstRender = useRef(true);
   const audioRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -21,7 +24,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
-  // Play audio using the attached DOM audio element ref
+  // Helper to play audio using the attached DOM audio element ref
   const playAudioUrl = useCallback((audioUrl, textFallback) => {
     if (!audioUrl && !textFallback) return;
 
@@ -50,7 +53,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const handleListen = useCallback(async (textToSpeak) => {
     if (!textToSpeak) return;
 
-    // Stop any speech synthesis in progress
+    // Stop any ongoing speech synthesis
     speechService.stop();
 
     setIsLoadingAudio(true);
@@ -62,14 +65,14 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
       }
     } catch (err) {
-      console.warn('Voice API error, falling back to speech synthesis:', err);
+      console.warn('TTS API error, falling back to speech synthesis:', err);
       speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
     } finally {
       setIsLoadingAudio(false);
     }
   }, [playAudioUrl]);
 
-  // Request guidance when student explicitly asks
+  // Request guidance when student explicitly asks or clicks a tab after mount
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
     setIsGenerating(true);
@@ -114,7 +117,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     }
   }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
 
-  // Load lesson detail and trigger strictly ONE welcome greeting on mount
+  // 1. Initial Mount: Load lesson and trigger strictly ONE welcome greeting
   useEffect(() => {
     let isMounted = true;
 
@@ -128,7 +131,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor for today's lesson on ${res.data.title}. Let's get started! 🌟`;
         setMessages([{ sender: 'tutor', text: welcomeText }]);
 
-        // Automatically trigger greeting audio
+        // Trigger welcome voice greeting
         handleListen(welcomeText);
       } catch (e) {
         console.warn('Lesson load error:', e);
@@ -149,7 +152,14 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     };
   }, [lessonId, studentName, handleListen]);
 
-  // Tab selection updates active tab view only — no automatic spam requests
+  // 2. Separate Tab Change Effect with isFirstRender guard (ignoring initial mount)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return; // DO NOT fetch AI response for the default tab ('Objectives') on mount
+    }
+  }, [activeTab]);
+
   const handleSelectTab = (tabIdx) => {
     setActiveTab(tabIdx);
   };
@@ -174,9 +184,10 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
 
   return (
     <div className="lesson-screen">
-      {/* Hidden audio element for reliable HTML5 DOM audio playback */}
+      {/* Hidden audio element with ref for reliable HTML5 DOM audio playback */}
       <audio
         ref={audioRef}
+        autoPlay
         onEnded={() => setIsSpeaking(false)}
         onError={() => setIsSpeaking(false)}
         style={{ display: 'none' }}
