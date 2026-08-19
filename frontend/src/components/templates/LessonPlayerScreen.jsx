@@ -15,8 +15,6 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   
-  // Explicit ref to track initial mount and prevent tab explanation race conditions
-  const isFirstRender = useRef(true);
   const audioRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -24,7 +22,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
-  // Helper to play audio using the attached DOM audio element ref
+  // Play audio using the attached DOM audio element ref
   const playAudioUrl = useCallback((audioUrl, textFallback) => {
     if (!audioUrl && !textFallback) return;
 
@@ -72,7 +70,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     }
   }, [playAudioUrl]);
 
-  // Request guidance when student explicitly asks or clicks a tab after mount
+  // Request guidance on explicit user click/interaction
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
     setIsGenerating(true);
@@ -100,7 +98,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
       const textToRead = speech_text || tutor_reply;
       handleListen(textToRead);
 
-      // Save lightweight session
+      // Save session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
@@ -117,7 +115,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     }
   }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
 
-  // 1. Initial Mount: Load lesson and trigger strictly ONE welcome greeting
+  // Welcome greeting only on initial mount — decoupled completely from tab changes
   useEffect(() => {
     let isMounted = true;
 
@@ -131,7 +129,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor for today's lesson on ${res.data.title}. Let's get started! 🌟`;
         setMessages([{ sender: 'tutor', text: welcomeText }]);
 
-        // Trigger welcome voice greeting
+        // Auto-play welcome greeting audio
         handleListen(welcomeText);
       } catch (e) {
         console.warn('Lesson load error:', e);
@@ -152,21 +150,17 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     };
   }, [lessonId, studentName, handleListen]);
 
-  // 2. Separate Tab Change Effect with isFirstRender guard (ignoring initial mount)
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return; // DO NOT fetch AI response for the default tab ('Objectives') on mount
-    }
-  }, [activeTab]);
-
+  // Explicit user click handler for tabs: sets state AND fetches AI explanation
   const handleSelectTab = (tabIdx) => {
     setActiveTab(tabIdx);
+    triggerGuidance(tabIdx);
   };
 
   const handleGotIt = () => {
     if (activeTab < 4) {
-      setActiveTab((prev) => prev + 1);
+      const next = activeTab + 1;
+      setActiveTab(next);
+      triggerGuidance(next);
     } else {
       onProceedToQuiz(lesson);
     }
@@ -241,7 +235,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
           <TutorChatStream messages={messages} />
           <TutorControls
             onGotIt={handleGotIt}
-            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section in a simpler way?")}
+            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section again in a simpler way?")}
             onAskQuestion={() => triggerGuidance(activeTab, "Can you give me an example to help me understand this better?")}
           />
         </div>
