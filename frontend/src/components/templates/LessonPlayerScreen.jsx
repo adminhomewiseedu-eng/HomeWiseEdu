@@ -22,20 +22,35 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
-  // Play audio using the attached DOM audio element ref
+  // Stop any currently playing audio or speech synthesis immediately
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      } catch (e) {}
+    }
+    speechService.stop();
+    setIsSpeaking(false);
+  }, []);
+
+  // Play audio using the attached DOM audio element ref with load() and safe play()
   const playAudioUrl = useCallback((audioUrl, textFallback) => {
     if (!audioUrl && !textFallback) return;
+
+    // Immediately stop previous sound
+    stopAudio();
 
     if (audioUrl && audioRef.current) {
       const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl}`;
       audioRef.current.src = fullUrl;
-      audioRef.current.currentTime = 0;
+      audioRef.current.load();
       
       setIsSpeaking(true);
       const playPromise = audioRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
-          console.warn('Autoplay blocked by browser policy:', err);
+          console.warn('Autoplay blocked by browser policy, falling back to speech synthesis:', err);
           setIsSpeaking(false);
           if (textFallback) {
             speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
@@ -45,14 +60,11 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     } else if (textFallback) {
       speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
     }
-  }, []);
+  }, [stopAudio]);
 
   // Fetch TTS audio and play it automatically via audioRef
   const handleListen = useCallback(async (textToSpeak) => {
     if (!textToSpeak) return;
-
-    // Stop any ongoing speech synthesis
-    speechService.stop();
 
     setIsLoadingAudio(true);
     try {
@@ -73,6 +85,9 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   // Request guidance on explicit user click/interaction
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
+    
+    // Stop any existing audio immediately when a new question or tab is requested
+    stopAudio();
     setIsGenerating(true);
 
     try {
@@ -98,7 +113,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
       const textToRead = speech_text || tutor_reply;
       handleListen(textToRead);
 
-      // Save session
+      // Save lightweight session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
@@ -113,7 +128,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     } finally {
       setIsGenerating(false);
     }
-  }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
+  }, [lesson, isGenerating, child, messages, dayNumber, handleListen, stopAudio]);
 
   // Welcome greeting only on initial mount — decoupled completely from tab changes
   useEffect(() => {
@@ -140,23 +155,24 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
 
     return () => {
       isMounted = false;
-      speechService.stop();
+      stopAudio();
       if (audioRef.current) {
         try {
-          audioRef.current.pause();
           audioRef.current.src = '';
         } catch (e) {}
       }
     };
-  }, [lessonId, studentName, handleListen]);
+  }, [lessonId, studentName, handleListen, stopAudio]);
 
-  // Explicit user click handler for tabs: sets state AND fetches AI explanation
+  // Explicit user click handler for tabs: stops old audio, sets state AND fetches AI explanation
   const handleSelectTab = (tabIdx) => {
+    stopAudio();
     setActiveTab(tabIdx);
     triggerGuidance(tabIdx);
   };
 
   const handleGotIt = () => {
+    stopAudio();
     if (activeTab < 4) {
       const next = activeTab + 1;
       setActiveTab(next);
@@ -235,8 +251,14 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
           <TutorChatStream messages={messages} />
           <TutorControls
             onGotIt={handleGotIt}
-            onExplainAgain={() => triggerGuidance(activeTab, "Can you explain this section again in a simpler way?")}
-            onAskQuestion={() => triggerGuidance(activeTab, "Can you give me an example to help me understand this better?")}
+            onExplainAgain={() => {
+              stopAudio();
+              triggerGuidance(activeTab, "Can you explain this section again in a simpler way?");
+            }}
+            onAskQuestion={() => {
+              stopAudio();
+              triggerGuidance(activeTab, "Can you give me an example to help me understand this better?");
+            }}
           />
         </div>
       </div>
