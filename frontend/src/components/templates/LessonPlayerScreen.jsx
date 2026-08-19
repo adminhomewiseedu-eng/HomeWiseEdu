@@ -21,46 +21,49 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
-  // Initialize single welcome message once on mount or when lesson changes
-  useEffect(() => {
-    let isMounted = true;
+  const handleListen = useCallback(async (textToSpeak) => {
+    if (!textToSpeak) return;
 
-    const initLesson = async () => {
-      try {
-        const res = await curriculumAPI.getLessonDetail(lessonId);
-        if (!isMounted) return;
-        setLesson(res.data);
-        setActiveTab(0);
-        
-        // Single clean welcome greeting (never auto-generate 5 simultaneous tab explanations)
-        setMessages([
-          {
-            sender: 'tutor',
-            text: `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor. Take your time reading through each section, and let me know whenever you need help or have questions! 🌟`
-          }
-        ]);
-      } catch (e) {
-        console.warn('Lesson load error:', e);
+    // Stop any existing playback
+    if (audioPlayerRef.current) {
+      try { audioPlayerRef.current.pause(); } catch (e) {}
+    }
+    speechService.stop();
+
+    setIsLoadingAudio(true);
+    try {
+      const res = await voiceAPI.getTTSAudio(textToSpeak);
+      if (res.data?.audio_url) {
+        const audioSrc = res.data.audio_url.startsWith('http')
+          ? res.data.audio_url
+          : `${API_BASE_URL}${res.data.audio_url}`;
+        const audio = new Audio(audioSrc);
+        audioPlayerRef.current = audio;
+        setIsSpeaking(true);
+        audio.onended = () => setIsSpeaking(false);
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
+        };
+        audio.play().catch(() => {
+          // Browser autoplay policy fallback
+          speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
+        });
+      } else {
+        speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
       }
-    };
-
-    initLesson();
-
-    return () => {
-      isMounted = false;
-      speechService.stop();
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
-      }
-    };
-  }, [lessonId, studentName]);
+    } catch (err) {
+      speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
+    } finally {
+      setIsLoadingAudio(false);
+    }
+  }, []);
 
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
     setIsGenerating(true);
 
     try {
-      // If user provided a prompt, display user bubble immediately
       if (prompt) {
         setMessages((prev) => [...prev, { sender: 'me', text: prompt }]);
       }
@@ -79,6 +82,10 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         { sender: 'tutor', text: tutor_reply, speech_text }
       ]);
 
+      // Automatically read aloud without requiring manual click
+      const textToRead = speech_text || tutor_reply;
+      handleListen(textToRead);
+
       // Save lightweight session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
@@ -94,42 +101,50 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     } finally {
       setIsGenerating(false);
     }
-  }, [lesson, isGenerating, child, messages, dayNumber]);
+  }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
 
-  const handleListen = async (textToSpeak) => {
-    if (!textToSpeak || isSpeaking || isLoadingAudio) return;
-    setIsLoadingAudio(true);
-    try {
-      const res = await voiceAPI.getTTSAudio(textToSpeak);
-      if (res.data?.audio_url) {
-        const audioSrc = res.data.audio_url.startsWith('http') ? res.data.audio_url : `${API_BASE_URL}${res.data.audio_url}`;
-        const audio = new Audio(audioSrc);
-        audioPlayerRef.current = audio;
-        setIsSpeaking(true);
-        audio.onended = () => setIsSpeaking(false);
-        audio.onerror = () => {
-          setIsSpeaking(false);
-          speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
-        };
-        audio.play();
-      } else {
-        speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
+  // Initialize single welcome message on mount and read it aloud automatically
+  useEffect(() => {
+    let isMounted = true;
+
+    const initLesson = async () => {
+      try {
+        const res = await curriculumAPI.getLessonDetail(lessonId);
+        if (!isMounted) return;
+        setLesson(res.data);
+        setActiveTab(0);
+
+        const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor. Take your time reading through each section, and let me know whenever you need help or have questions! 🌟`;
+        setMessages([{ sender: 'tutor', text: welcomeText }]);
+
+        // Automatic voice greeting on load
+        handleListen(welcomeText);
+      } catch (e) {
+        console.warn('Lesson load error:', e);
       }
-    } catch (err) {
-      speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
-    } finally {
-      setIsLoadingAudio(false);
-    }
-  };
+    };
+
+    initLesson();
+
+    return () => {
+      isMounted = false;
+      speechService.stop();
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+      }
+    };
+  }, [lessonId, studentName, handleListen]);
 
   const handleSelectTab = (tabIdx) => {
     setActiveTab(tabIdx);
+    triggerGuidance(tabIdx);
   };
 
   const handleGotIt = () => {
     if (activeTab < 4) {
       const next = activeTab + 1;
       setActiveTab(next);
+      triggerGuidance(next);
     } else {
       onProceedToQuiz(lesson);
     }
@@ -177,7 +192,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
                 gap: '4px'
               }}
             >
-              {isSpeaking ? '🔊 Speaking...' : isLoadingAudio ? '⏳ Loading...' : '🔊 Listen'}
+              {isSpeaking ? '🔊 Speaking...' : isLoadingAudio ? '⏳ Loading...' : '🔊 Replay'}
             </button>
           )}
           <div className="pill" style={{ background: '#F3E8FF', color: 'var(--grape)' }}>
