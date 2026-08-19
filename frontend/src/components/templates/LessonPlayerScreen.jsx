@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import LessonDocView from '../organisms/LessonDocView';
 import TutorHeader from '../organisms/TutorHeader';
 import TutorChatStream from '../organisms/TutorChatStream';
@@ -14,55 +14,54 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  
-  const audioRef = useRef(null);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
 
-  // Stop any currently playing audio or speech synthesis immediately
+  // Stop any currently playing audio immediately
   const stopAudio = useCallback(() => {
-    if (audioRef.current) {
+    const player = document.getElementById('lesson-audio-player');
+    if (player) {
       try {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
+        player.pause();
+        player.currentTime = 0;
+        player.src = '';
       } catch (e) {}
     }
     speechService.stop();
     setIsSpeaking(false);
   }, []);
 
-  // Play audio using the attached DOM audio element ref with load() and safe play()
-  const playAudioUrl = useCallback((audioUrl, textFallback) => {
-    if (!audioUrl && !textFallback) return;
-
-    // Immediately stop previous sound
+  // Directly play audio URL through the persistent DOM audio element
+  const playAudioDirect = useCallback((newAudioUrl, textFallback) => {
     stopAudio();
 
-    if (audioUrl && audioRef.current) {
-      const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${API_BASE_URL}${audioUrl}`;
-      audioRef.current.src = fullUrl;
-      audioRef.current.load();
-      
-      setIsSpeaking(true);
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('Autoplay blocked by browser policy, falling back to speech synthesis:', err);
+    if (newAudioUrl) {
+      const player = document.getElementById('lesson-audio-player');
+      if (player) {
+        const fullUrl = newAudioUrl.startsWith('http') ? newAudioUrl : `${API_BASE_URL}${newAudioUrl}`;
+        player.src = fullUrl;
+        player.load();
+        setIsSpeaking(true);
+        player.play().catch((err) => {
+          console.error('Autoplay blocked:', err);
           setIsSpeaking(false);
           if (textFallback) {
             speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
           }
         });
+        return;
       }
-    } else if (textFallback) {
+    }
+
+    if (textFallback) {
       speechService.speak(textFallback, () => setIsSpeaking(true), () => setIsSpeaking(false));
     }
   }, [stopAudio]);
 
-  // Fetch TTS audio and play it automatically via audioRef
+  // Fetch TTS audio and play it directly
   const handleListen = useCallback(async (textToSpeak) => {
     if (!textToSpeak) return;
 
@@ -70,23 +69,23 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     try {
       const res = await voiceAPI.getTTSAudio(textToSpeak);
       if (res.data?.audio_url) {
-        playAudioUrl(res.data.audio_url, textToSpeak);
+        playAudioDirect(res.data.audio_url, textToSpeak);
       } else {
         speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
       }
     } catch (err) {
-      console.warn('TTS API error, falling back to speech synthesis:', err);
+      console.error('TTS API error, falling back to speech synthesis:', err);
       speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
     } finally {
       setIsLoadingAudio(false);
     }
-  }, [playAudioUrl]);
+  }, [playAudioDirect]);
 
-  // Request guidance on explicit user click/interaction
+  // Request AI guidance when user clicks tab or asks question
   const triggerGuidance = useCallback(async (tabIdx, prompt = null, currentLesson = lesson) => {
     if (!currentLesson || isGenerating) return;
-    
-    // Stop any existing audio immediately when a new question or tab is requested
+
+    // 1. Instantly stop old audio
     stopAudio();
     setIsGenerating(true);
 
@@ -109,11 +108,11 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         { sender: 'tutor', text: tutor_reply, speech_text }
       ]);
 
-      // Automatically play voice for this new AI response
+      // 2. Play audio directly inside the resolving block
       const textToRead = speech_text || tutor_reply;
       handleListen(textToRead);
 
-      // Save lightweight session
+      // 3. Save lightweight session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
@@ -124,13 +123,13 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
       }).catch(() => {});
 
     } catch (e) {
-      console.warn('Tutor guidance error:', e);
+      console.error('Tutor guidance error:', e);
     } finally {
       setIsGenerating(false);
     }
   }, [lesson, isGenerating, child, messages, dayNumber, handleListen, stopAudio]);
 
-  // Welcome greeting only on initial mount — decoupled completely from tab changes
+  // Initial mount: load lesson and fire welcome greeting
   useEffect(() => {
     let isMounted = true;
 
@@ -144,10 +143,10 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor for today's lesson on ${res.data.title}. Let's get started! 🌟`;
         setMessages([{ sender: 'tutor', text: welcomeText }]);
 
-        // Auto-play welcome greeting audio
+        // Directly play welcome audio
         handleListen(welcomeText);
       } catch (e) {
-        console.warn('Lesson load error:', e);
+        console.error('Lesson load error:', e);
       }
     };
 
@@ -156,15 +155,10 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     return () => {
       isMounted = false;
       stopAudio();
-      if (audioRef.current) {
-        try {
-          audioRef.current.src = '';
-        } catch (e) {}
-      }
     };
   }, [lessonId, studentName, handleListen, stopAudio]);
 
-  // Explicit user click handler for tabs: stops old audio, sets state AND fetches AI explanation
+  // Tab click: instantly stop audio, update tab, trigger guidance
   const handleSelectTab = (tabIdx) => {
     stopAudio();
     setActiveTab(tabIdx);
@@ -194,9 +188,9 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
 
   return (
     <div className="lesson-screen">
-      {/* Hidden audio element with ref for reliable HTML5 DOM audio playback */}
+      {/* DOM audio player for single-source reliable playback */}
       <audio
-        ref={audioRef}
+        id="lesson-audio-player"
         autoPlay
         onEnded={() => setIsSpeaking(false)}
         onError={() => setIsSpeaking(false)}
