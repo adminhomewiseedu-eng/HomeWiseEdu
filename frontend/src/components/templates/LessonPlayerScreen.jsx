@@ -24,9 +24,12 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
   const handleListen = useCallback(async (textToSpeak) => {
     if (!textToSpeak) return;
 
-    // Stop any existing playback
+    // Stop any existing playback immediately
     if (audioPlayerRef.current) {
-      try { audioPlayerRef.current.pause(); } catch (e) {}
+      try { 
+        audioPlayerRef.current.pause(); 
+        audioPlayerRef.current.currentTime = 0;
+      } catch (e) {}
     }
     speechService.stop();
 
@@ -37,22 +40,36 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         const audioSrc = res.data.audio_url.startsWith('http')
           ? res.data.audio_url
           : `${API_BASE_URL}${res.data.audio_url}`;
+        
         const audio = new Audio(audioSrc);
         audioPlayerRef.current = audio;
         setIsSpeaking(true);
-        audio.onended = () => setIsSpeaking(false);
-        audio.onerror = () => {
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+        };
+        audio.onerror = (err) => {
+          console.warn('Audio playback error, falling back to speech synthesis:', err);
           setIsSpeaking(false);
           speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
         };
-        audio.play().catch(() => {
-          // Browser autoplay policy fallback
+
+        // Safe autoplay handling with Promise catch
+        try {
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            await playPromise;
+          }
+        } catch (playErr) {
+          console.warn('Autoplay blocked by browser policy, using speech synthesis fallback:', playErr);
+          setIsSpeaking(false);
           speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
-        });
+        }
       } else {
         speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
       }
     } catch (err) {
+      console.warn('Voice API error, using browser speech synthesis:', err);
       speechService.speak(textToSpeak, () => setIsSpeaking(true), () => setIsSpeaking(false));
     } finally {
       setIsLoadingAudio(false);
@@ -82,11 +99,11 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         { sender: 'tutor', text: tutor_reply, speech_text }
       ]);
 
-      // Automatically read aloud without requiring manual click
+      // Automatically play audio for this new AI tutor response
       const textToRead = speech_text || tutor_reply;
       handleListen(textToRead);
 
-      // Save lightweight session
+      // Save session
       lessonAPI.updateSession({
         child_id: child?.id || 1,
         lesson_id: currentLesson.id,
@@ -103,7 +120,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
     }
   }, [lesson, isGenerating, child, messages, dayNumber, handleListen]);
 
-  // Initialize single welcome message on mount and read it aloud automatically
+  // Load lesson detail and auto-play welcome greeting immediately
   useEffect(() => {
     let isMounted = true;
 
@@ -117,7 +134,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
         const welcomeText = `Welcome, ${studentName}! I'm Ms. Ade, your AI tutor. Take your time reading through each section, and let me know whenever you need help or have questions! 🌟`;
         setMessages([{ sender: 'tutor', text: welcomeText }]);
 
-        // Automatic voice greeting on load
+        // Automatically trigger the greeting voice audio
         handleListen(welcomeText);
       } catch (e) {
         console.warn('Lesson load error:', e);
@@ -130,7 +147,7 @@ export default function LessonPlayerScreen({ lessonId = 1, dayNumber = 1, activi
       isMounted = false;
       speechService.stop();
       if (audioPlayerRef.current) {
-        audioPlayerRef.current.pause();
+        try { audioPlayerRef.current.pause(); } catch (e) {}
       }
     };
   }, [lessonId, studentName, handleListen]);
