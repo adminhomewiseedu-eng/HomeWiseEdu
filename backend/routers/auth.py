@@ -135,6 +135,23 @@ def add_child(
     lvl = max(0, min(13, int(child_in.level)))
     lvl_label = get_level_label(lvl, edu_sys)
 
+    requested_subject_ids = child_in.subject_ids or []
+    if requested_subject_ids:
+        subjects = db.query(Subject).filter(Subject.id.in_(requested_subject_ids)).all()
+        if len(subjects) != len(set(requested_subject_ids)):
+            raise HTTPException(status_code=400, detail="One or more selected subjects are invalid")
+        subject_ids = [subject.id for subject in subjects]
+    else:
+        subjects = db.query(Subject).filter(
+            Subject.slug.in_(["mathematics", "english-language", "science"])
+        ).all()
+        if not subjects:
+            raise HTTPException(
+                status_code=503,
+                detail="Curriculum subjects are not configured yet. Ask an administrator to import the curriculum first.",
+            )
+        subject_ids = [subject.id for subject in subjects]
+
     child = Child(
         parent_id=pid,
         name=child_in.name,
@@ -152,13 +169,7 @@ def add_child(
     db.commit()
     db.refresh(child)
 
-    # Enroll in selected subjects
-    subject_ids = child_in.subject_ids or []
-    if not subject_ids:
-        # Default enrollment: Mathematics, English Language, Science
-        default_subjs = db.query(Subject).filter(Subject.slug.in_(["mathematics", "english-language", "science"])).all()
-        subject_ids = [s.id for s in default_subjs]
-
+    # Enroll in the validated selected/default subjects.
     for sid in subject_ids:
         exists = db.query(ChildSubject).filter(ChildSubject.child_id == child.id, ChildSubject.subject_id == sid).first()
         if not exists:

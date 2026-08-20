@@ -29,6 +29,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
     streak_days = 1,
     badges_count = 0,
     completed_lessons_count = 0,
+    curriculum_state = 'ready',
     today_lesson,
     progress_by_subject = [],
     recent_projects = [],
@@ -94,6 +95,18 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
                 ▶ Start Lesson
               </button>
             </>
+          ) : curriculum_state === 'no_subjects' ? (
+            <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink-soft)' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📚</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--plum)' }}>No subjects assigned yet</div>
+              <p style={{ fontSize: 13, marginTop: 4 }}>Ask your parent or administrator to configure your academic pathway.</p>
+            </div>
+          ) : curriculum_state === 'no_published_lessons' ? (
+            <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink-soft)' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>🗓️</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--plum)' }}>No published lessons available</div>
+              <p style={{ fontSize: 13, marginTop: 4 }}>Your curriculum is being prepared. Please check back soon.</p>
+            </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink-soft)' }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>🎉</div>

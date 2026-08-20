@@ -75,7 +75,6 @@ export const curriculumAPI = {
   }),
   getAdminLessons: () => api.get('/api/curriculum/admin/lessons', {
     params: { _ts: Date.now() },
-    headers: { 'Cache-Control': 'no-cache' },
   }),
   setLessonPublication: (lessonId, publish) =>
     api.patch(`/api/curriculum/admin/lessons/${lessonId}/publication`, { publish }),

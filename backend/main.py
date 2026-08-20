@@ -26,7 +26,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Cache-Control"],
 )
 app.mount("/uploads/audio", StaticFiles(directory=settings.TTS_CACHE_DIR), name="audio")
 

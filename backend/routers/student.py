@@ -199,6 +199,12 @@ def get_student_dashboard(
         "streak_days": child.streak_days,
         "badges_count": min(completed_lessons_count, 12),
         "completed_lessons_count": completed_lessons_count,
+        "curriculum_state": (
+            "no_subjects" if not enrolled_subject_ids else
+            "no_published_lessons" if not available_lessons else
+            "ready"
+        ),
+        "available_lessons_count": len(available_lessons),
         "today_lesson": today_lesson_payload,
         "progress_by_subject": progress_by_subject,
         "recent_projects": recent_projects,

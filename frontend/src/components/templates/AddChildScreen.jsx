@@ -14,11 +14,14 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
   const [avatar, setAvatar] = useState('🦁');
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
+  const [subjectsLoading, setSubjectsLoading] = useState(true);
+  const [subjectsError, setSubjectsError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     async function fetchSubjects() {
       try {
+        setSubjectsError('');
         const res = await curriculumAPI.getSubjects();
         if (res.data) {
           setAvailableSubjects(res.data);
@@ -27,9 +30,15 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
             .filter((s) => ['mathematics', 'english-language', 'science'].includes(s.slug))
             .map((s) => s.id);
           setSelectedSubjectIds(defaultIds);
+          if (res.data.length === 0) {
+            setSubjectsError('Curriculum subjects are not configured yet. Please ask an administrator to import the curriculum first.');
+          }
         }
       } catch (err) {
         console.error('Failed to load subjects:', err);
+        setSubjectsError('Subjects could not be loaded. Please try again shortly.');
+      } finally {
+        setSubjectsLoading(false);
       }
     }
     fetchSubjects();
@@ -161,6 +170,8 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                     );
                   })}
                 </div>
+                {subjectsLoading && <p style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Loading subjects…</p>}
+                {subjectsError && <div className="admin-notice" style={{ marginTop: 8 }}>{subjectsError}</div>}
               </div>
 
               <div className="field" style={{ marginTop: 16 }}>
@@ -168,7 +179,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 <AvatarPicker selected={avatar} onSelect={setAvatar} />
               </div>
 
-              <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading}>
+              <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading || subjectsLoading || availableSubjects.length === 0}>
                 {loading ? 'Setting up...' : 'Set up curriculum →'}
               </Button>
             </form>
