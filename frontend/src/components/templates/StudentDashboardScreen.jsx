@@ -90,7 +90,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
                   </div>
                 </div>
               </div>
-              <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} onClick={() => onStartLesson(today_lesson.id)}>
+              <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} onClick={() => onStartLesson(today_lesson)}>
                 ▶ Start Lesson
               </button>
             </>
@@ -196,9 +196,9 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
           </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: 'var(--plum)' }}>
-              📋 Daily Quiz <span className="pill" style={{ background: '#F0FDF4', color: '#16A34A' }}>Ready!</span>
+              📋 Daily Quiz <span className="pill" style={{ background: '#F0FDF4', color: '#16A34A' }}>{today_lesson?.practice_ready ? 'Ready!' : 'Locked'}</span>
             </div>
-            <button className="btn btn-grape btn-sm" onClick={() => onStartQuiz(today_lesson?.id || 1)}>
+            <button className="btn btn-grape btn-sm" disabled={!today_lesson?.practice_ready} onClick={() => onStartQuiz(today_lesson)}>
               Take Quiz →
             </button>
           </div>

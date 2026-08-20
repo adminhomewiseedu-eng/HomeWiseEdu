@@ -13,31 +13,48 @@ from ..utils.levels import get_level_label
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[int]:
+def get_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> User:
     if not authorization:
-        return None
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
-            return None
+            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload.get("id")
+        user_id = payload.get("id")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        return user
+    except HTTPException:
+        raise
     except Exception:
-        return None
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+def get_current_user_id(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> int:
+    return get_current_user(authorization, db).id
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+def authorize_child(db: Session, current_user: User, child_id: int) -> Child:
+    child = db.query(Child).filter(Child.id == child_id).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    if current_user.role != "admin" and child.parent_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized for this child")
+    return child
 
 def verify_password(plain_password, hashed_password):
-    if hashed_password.startswith("plain:"):
-        return hashed_password == f"plain:{plain_password}"
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception:
-        return plain_password == hashed_password
+        return False
 
 def get_password_hash(password):
-    try:
-        return pwd_context.hash(password)
-    except Exception:
-        return f"plain:{password}"
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -47,6 +64,8 @@ def create_access_token(data: dict):
 
 @router.post("/register", response_model=TokenResponse)
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
+    if (user_in.role or "parent").lower() != "parent":
+        raise HTTPException(status_code=403, detail="Public registration only supports parent accounts")
     existing = db.query(User).filter(User.email == user_in.email.lower()).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -55,7 +74,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         email=user_in.email.lower(),
         name=user_in.name,
         password_hash=get_password_hash(user_in.password),
-        role=user_in.role or "parent",
+        role="parent",
         avatar=user_in.name[0].upper() if user_in.name else "U"
     )
     db.add(user)
@@ -99,15 +118,18 @@ def add_child(
     child_in: ChildCreate, 
     parent_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    auth_user_id: Optional[int] = Depends(get_current_user_id)
+    current_user: User = Depends(get_current_user)
 ):
-    pid = auth_user_id or parent_id or child_in.parent_id
-    if not pid:
-        raise HTTPException(status_code=401, detail="Authentication required to add child")
+    requested_pid = parent_id or child_in.parent_id or current_user.id
+    if current_user.role != "admin" and requested_pid != current_user.id:
+        raise HTTPException(status_code=403, detail="Cannot add a child to another parent")
+    pid = requested_pid
     
     parent = db.query(User).filter(User.id == pid).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Parent user not found")
+    if parent.role != "parent":
+        raise HTTPException(status_code=400, detail="Children can only be assigned to parent accounts")
 
     edu_sys = child_in.education_system or "UK"
     lvl = max(0, min(13, int(child_in.level)))

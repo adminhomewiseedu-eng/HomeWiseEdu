@@ -100,6 +100,7 @@ class Lesson(Base):
     title = Column(String, nullable=False)
     topic = Column(String, nullable=True)
     order_num = Column(Integer, default=1)
+    curriculum_country = Column(String, nullable=True)
     
     # Structured Lesson Summary Fields
     objectives = Column(JSON, default=list)
@@ -140,6 +141,8 @@ class LessonDay(Base):
     ai_script = Column(Text, nullable=True) # AI Teaching Script / guidance
     real_world_context = Column(Text, nullable=True)
     visual_support = Column(Text, nullable=True)
+    origin_of_knowledge = Column(Text, nullable=True)
+    video_url = Column(Text, nullable=True)
     practice_questions = Column(JSON, default=list)
     vocabulary = Column(JSON, default=list)
     reading_recommendations = Column(JSON, default=list)
@@ -162,10 +165,15 @@ class LessonSession(Base):
     lesson_id = Column(Integer, ForeignKey("lessons.id"), nullable=False)
     day_number = Column(Integer, default=1, nullable=False)
     current_tab = Column(Integer, default=0) # 0=Objectives, 1=Learn, 2=Examples, 3=Words, 4=Remember
+    pedagogical_state = Column(JSON, default=dict) # Backend-owned state: current_phase, worked_examples_completed, etc.
     messages = Column(JSON, default=list) # [{sender: "tutor", text: "..."}]
     is_completed = Column(Boolean, default=False)
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
     last_active_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("child_id", "lesson_id", "day_number", name="uq_lesson_session_child_lesson_day"),
+    )
 
     child = relationship("Child", back_populates="sessions")
     lesson = relationship("Lesson", back_populates="sessions")
@@ -197,7 +205,12 @@ class StudentProgress(Base):
     quiz_score = Column(Integer, default=100) # percentage
     mastery_status = Column(String, default="competent") # developing, competent, mastered
     remediation_needed = Column(Boolean, default=False)
+    quiz_xp_awarded = Column(Boolean, default=False, nullable=False)
     completed_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("child_id", "lesson_id", "day_number", name="uq_student_progress_child_lesson_day"),
+    )
 
     child = relationship("Child", back_populates="progress_records")
     lesson = relationship("Lesson", back_populates="progress_records")
@@ -217,9 +230,11 @@ class LearningEvidence(Base):
     submission_type = Column(String, default="text") # text, image, video, audio, file
     content = Column(Text, nullable=True)
     file_upload = Column(String, nullable=True) # relative URL path
-    score = Column(Integer, default=90)
+    stored_file_name = Column(String, nullable=True) # generated server-side name; never client input
+    score = Column(Integer, nullable=True)
     ai_feedback = Column(Text, nullable=False)
     verified = Column(Boolean, default=True)
+    completion_xp_awarded = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     child = relationship("Child", back_populates="evidence_records")

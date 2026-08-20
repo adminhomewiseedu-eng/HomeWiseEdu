@@ -34,7 +34,7 @@ async def call_gemini(prompt: str, system_instruction: Optional[str] = None) -> 
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 return text
             else:
-                logger.warning(f"Gemini API returned status {response.status_code}: {response.text}")
+                logger.warning("Gemini provider failure status=%s", response.status_code)
     except Exception as e:
         logger.error(f"Error invoking Gemini API: {e}")
     

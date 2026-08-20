@@ -1,9 +1,15 @@
 import pytest
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend.utils.levels import get_level_label, EDUCATION_SYSTEMS
 
 client = TestClient(app)
+
+def demo_headers(email="sarah@email.com"):
+    response = client.post("/api/auth/login", json={"email": email, "password": "password"})
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 def test_root():
     response = client.get("/")
@@ -58,14 +64,15 @@ def test_curriculum_importer_csv():
     )
     response = client.post(
         "/api/curriculum/import-csv",
-        files={"file": ("curriculum_test.csv", sample_csv.encode("utf-8"), "text/csv")}
+        files={"file": ("curriculum_test.csv", sample_csv.encode("utf-8"), "text/csv")},
+        headers=demo_headers("jake@email.com")
     )
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["stats"]["days_processed"] == 3
 
 def test_parent_dashboard():
-    response = client.get("/api/parent/dashboard/1")
+    response = client.get("/api/parent/dashboard/1", headers=demo_headers())
     assert response.status_code == 200
     data = response.json()
     assert len(data["children"]) >= 3
@@ -84,10 +91,11 @@ def test_parent_dashboard():
 
 def test_leo_level_0_student_dashboard():
     # Find Leo's child ID
-    parent_res = client.get("/api/parent/dashboard/1")
+    headers = demo_headers()
+    parent_res = client.get("/api/parent/dashboard/1", headers=headers)
     leo_id = next(c["id"] for c in parent_res.json()["children"] if c["name"] == "Leo")
 
-    response = client.get(f"/api/student/dashboard/{leo_id}")
+    response = client.get(f"/api/student/dashboard/{leo_id}", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Leo"
@@ -106,7 +114,8 @@ def test_lesson_tutor_and_session():
         "current_tab": 0,
         "user_prompt": "What are we learning today?"
     }
-    response = client.post("/api/lessons/chat-guidance", json=chat_payload)
+    headers = demo_headers()
+    response = client.post("/api/lessons/chat-guidance", json=chat_payload, headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert "tutor_reply" in data
@@ -118,19 +127,19 @@ def test_lesson_tutor_and_session():
         "lesson_id": 1,
         "day_number": 1,
         "current_tab": 2,
-        "messages": [{"sender": "tutor", "text": "Welcome to tab 2!"}],
-        "is_completed": False
+        "messages": [{"sender": "tutor", "text": "Welcome to tab 2!"}]
     }
-    s_post = client.post("/api/lessons/session", json=sess_payload)
+    s_post = client.post("/api/lessons/session", json=sess_payload, headers=headers)
     assert s_post.status_code == 200
 
-    s_get = client.get("/api/lessons/session/1/1")
+    s_get = client.get("/api/lessons/session/1/1/1", headers=headers)
     assert s_get.status_code == 200
     assert s_get.json()["current_tab"] == 2
 
 def test_evidence_submission():
     # Find Leo
-    parent_res = client.get("/api/parent/dashboard/1")
+    headers = demo_headers()
+    parent_res = client.get("/api/parent/dashboard/1", headers=headers)
     leo_id = next(c["id"] for c in parent_res.json()["children"] if c["name"] == "Leo")
 
     form_data = {
@@ -142,7 +151,14 @@ def test_evidence_submission():
         "skill": "Count up to 5 items",
         "content": "I counted 5 apples: 1, 2, 3, 4, 5."
     }
-    response = client.post("/api/evidence/submit", data=form_data)
+    evaluation = {
+        "score": 95,
+        "verified": True,
+        "mastery_status": "mastered",
+        "ai_feedback": "Accurate counting evidence.",
+    }
+    with patch("backend.routers.evidence.evaluate_student_work", new=AsyncMock(return_value=evaluation)):
+        response = client.post("/api/evidence/submit", data=form_data, headers=headers)
     assert response.status_code == 200
     ev = response.json()
     assert ev["verified"] is True
@@ -151,13 +167,13 @@ def test_evidence_submission():
 
 def test_voice_tts_endpoint():
     tts_payload = {"text": "Hello Leo! Welcome to Counting to 5."}
-    response = client.post("/api/voice/tts", json=tts_payload)
+    response = client.post("/api/voice/tts", json=tts_payload, headers=demo_headers())
     assert response.status_code == 200
     data = response.json()
     assert "success" in data
 
 def test_student_report_endpoint():
-    response = client.get("/api/reports/student/1")
+    response = client.get("/api/reports/student/1", headers=demo_headers())
     assert response.status_code == 200
     report = response.json()
     assert "student" in report

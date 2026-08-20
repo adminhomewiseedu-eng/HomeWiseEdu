@@ -40,6 +40,15 @@ export default function App() {
   const [activeLessonId, setActiveLessonId] = useState(1);
   const [currentLessonData, setCurrentLessonData] = useState(null);
   const [quizResultData, setQuizResultData] = useState(null);
+  const [activeDayNumber, setActiveDayNumber] = useState(1);
+  const [activeActivityType, setActiveActivityType] = useState('Explore');
+
+  const selectLessonContext = (lessonRef) => {
+    const id = typeof lessonRef === 'object' ? lessonRef?.id : lessonRef;
+    setActiveLessonId(id || 1);
+    setActiveDayNumber(typeof lessonRef === 'object' ? (lessonRef?.day_number || 1) : 1);
+    setActiveActivityType(typeof lessonRef === 'object' ? (lessonRef?.activity_type || 'Explore') : 'Explore');
+  };
 
   const go = (path) => { navigate(path.startsWith('/') ? path : `/${path}`); window.scrollTo(0, 0); };
 
@@ -94,13 +103,13 @@ export default function App() {
         <Route path="/login" element={<LoginScreen onNavigate={go} onLogin={handleLogin} />} />
         <Route path="/add-child" element={<AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} />} />
         <Route path="/parent" element={<ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} />} />
-        <Route path="/student" element={<StudentDashboardScreen child={activeChild} onBackToParent={() => go('/parent')} onStartLesson={(id) => { setActiveLessonId(id); go('/lesson'); }} onStartQuiz={(id) => { setActiveLessonId(id); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} />} />
-        <Route path="/lesson" element={<LessonPlayerScreen lessonId={activeLessonId} child={activeChild} onExit={() => go('/student')} onProceedToQuiz={(l) => { setCurrentLessonData(l); setActiveLessonId(l?.id || activeLessonId); go('/quiz'); }} />} />
-        <Route path="/quiz" element={<QuizScreen lesson={currentLessonData} lessonId={activeLessonId} child={activeChild} onExit={() => go('/student')} onQuizComplete={(res) => { setQuizResultData(res); go('/submit'); }} />} />
-        <Route path="/submit" element={<EvidenceSubmitScreen lesson={currentLessonData} lessonId={activeLessonId} child={activeChild} quizResult={quizResultData} onExit={() => go('/student')} onSubmitSuccess={() => go('/complete')} />} />
+        <Route path="/student" element={<StudentDashboardScreen child={activeChild} onBackToParent={() => go('/parent')} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} />} />
+        <Route path="/lesson" element={<LessonPlayerScreen lessonId={activeLessonId} dayNumber={activeDayNumber} activityType={activeActivityType} child={activeChild} onExit={() => go('/student')} onProceedToQuiz={(l) => { setCurrentLessonData(l); setActiveLessonId(l?.id || activeLessonId); go('/quiz'); }} />} />
+        <Route path="/quiz" element={<QuizScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} onExit={() => go('/student')} onQuizComplete={(res) => { setQuizResultData(res); go('/submit'); }} />} />
+        <Route path="/submit" element={<EvidenceSubmitScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} quizResult={quizResultData} onExit={() => go('/student')} onSubmitSuccess={() => go('/complete')} />} />
         <Route path="/complete" element={<LessonCompleteScreen child={activeChild} quizResult={quizResultData} onViewPortfolio={() => go('/portfolio')} onNextLesson={() => go('/student')} />} />
         <Route path="/portfolio" element={<PortfolioScreen child={activeChild} onBack={() => go('/parent')} />} />
-        <Route path="/admin" element={<AdminDashboardScreen onExit={handleLogout} />} />
+        <Route path="/admin/*" element={currentUser?.role === 'admin' ? <AdminDashboardScreen onExit={handleLogout} /> : <Navigate to={currentUser ? '/parent' : '/login'} replace />} />
       </Routes>
     </div>
   );

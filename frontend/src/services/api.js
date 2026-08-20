@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
+export const API_BASE_URL = import.meta.env?.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -16,6 +16,18 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !error.config?.url?.includes('/api/auth/login')) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('currentUser');
+      if (window.location.pathname !== '/login') window.location.assign('/login');
+    }
+    return Promise.reject(error);
+  },
+);
 
 export const authAPI = {
   login: (email, password) => api.post('/api/auth/login', { email, password }),
@@ -58,29 +70,46 @@ export const curriculumAPI = {
   importCSV: (formData) => api.post('/api/curriculum/import-csv', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  validateCSV: (formData) => api.post('/api/curriculum/import-csv/validate', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getAdminLessons: () => api.get('/api/curriculum/admin/lessons', {
+    params: { _ts: Date.now() },
+    headers: { 'Cache-Control': 'no-cache' },
+  }),
+  setLessonPublication: (lessonId, publish) =>
+    api.patch(`/api/curriculum/admin/lessons/${lessonId}/publication`, { publish }),
+  updateLessonDay: (dayId, payload) => api.patch(`/api/curriculum/admin/lesson-days/${dayId}`, payload),
 };
 
 export const lessonAPI = {
-  getChatGuidance: (childId, lessonId, currentTab, userPrompt = null, messageHistory = []) =>
+  getChatGuidance: (childId, lessonId, dayNumber, currentTab, userPrompt = null, messageHistory = [], eventType = null, deliveryToken = null) =>
     api.post('/api/lessons/chat-guidance', {
       child_id: childId,
       lesson_id: lessonId,
+      day_number: dayNumber,
       current_tab: currentTab,
       user_prompt: userPrompt,
       message_history: messageHistory,
+      event_type: eventType,
+      delivery_token: deliveryToken,
     }),
   updateSession: (sessionData) => api.post('/api/lessons/session', sessionData),
-  getSession: (childId, lessonId) => api.get(`/api/lessons/session/${childId}/${lessonId}`),
-  submitQuiz: (childId, lessonId, answers) =>
+  getSession: (childId, lessonId, dayNumber = 1) => api.get(`/api/lessons/session/${childId}/${lessonId}/${dayNumber}`),
+  getQuiz: (childId, lessonId, dayNumber = 1) =>
+    api.get(`/api/lessons/${lessonId}/quiz`, { params: { child_id: childId, day_number: dayNumber } }),
+  submitQuiz: (childId, lessonId, dayNumber, answers) =>
     api.post('/api/lessons/submit-quiz', {
       child_id: childId,
       lesson_id: lessonId,
+      day_number: dayNumber,
       answers,
     }),
 };
 
 export const voiceAPI = {
-  getTTSAudio: (text, voiceId = null) => api.post('/api/voice/tts', { text, voice_id: voiceId }),
+  getTTSAudio: (text, voiceId = null, signal = undefined) =>
+    api.post('/api/voice/tts', { text, voice_id: voiceId }, { signal }),
 };
 
 export const reportsAPI = {
@@ -93,6 +122,7 @@ export const evidenceAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   getPortfolio: (childId) => api.get(`/api/evidence/portfolio/${childId}`),
+  retryEvaluation: (evidenceId) => api.post(`/api/evidence/${evidenceId}/retry-evaluation`),
 };
 
 export const parentAPI = {
@@ -107,6 +137,14 @@ export const studentAPI = {
 
 export const adminAPI = {
   getDashboard: () => api.get('/api/admin/dashboard'),
+  getStudents: () => api.get('/api/admin/students'),
+  getStudent: (studentId) => api.get(`/api/admin/students/${studentId}`),
+  getEvidence: () => api.get('/api/admin/evidence'),
+  getAnalytics: () => api.get('/api/admin/analytics'),
+  getReports: () => api.get('/api/admin/reports'),
+  getAIMonitoring: () => api.get('/api/admin/ai-monitoring'),
+  getSettings: () => api.get('/api/admin/settings'),
+  getContent: () => api.get('/api/admin/content'),
 };
 
 export default api;

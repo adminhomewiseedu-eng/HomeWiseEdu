@@ -2,16 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from ..database import get_db
-from ..models import Child, Subject, Unit, Lesson, LessonDay, StudentProgress, LearningEvidence, ChildSubject
+from ..models import Child, Subject, Unit, Lesson, LessonDay, StudentProgress, LearningEvidence, ChildSubject, User, LessonSession
 from ..utils.levels import get_level_label
+from .auth import get_current_user, authorize_child
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 
 @router.get("/dashboard/{child_id}")
-def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    child = db.query(Child).filter(Child.id == child_id).first()
-    if not child:
-        raise HTTPException(status_code=404, detail="Child not found")
+def get_student_dashboard(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    child = authorize_child(db, current_user, child_id)
 
     student_level = child.level if child.level is not None else 0
     edu_sys = child.education_system or "UK"
@@ -51,6 +54,9 @@ def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[
         .order_by(Unit.order_num.asc(), Lesson.order_num.asc())
         .all()
     )
+    available_lessons = [lesson for lesson in available_lessons if any(
+        (day.status or "").lower() in {"active", "published"} for day in lesson.days
+    ) or not lesson.days]
 
     current_lesson = None
     current_day_number = 1
@@ -59,7 +65,10 @@ def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[
 
     for l in available_lessons:
         # Check Days 1, 2, 3 in order
-        days = db.query(LessonDay).filter(LessonDay.lesson_id == l.id).order_by(LessonDay.day_number.asc()).all()
+        days = db.query(LessonDay).filter(
+            LessonDay.lesson_id == l.id,
+            LessonDay.status.in_(["active", "published"])
+        ).order_by(LessonDay.day_number.asc()).all()
         if not days:
             # Fallback if days not yet seeded for this lesson
             if (l.id, 1) not in completed_pairs:
@@ -82,8 +91,6 @@ def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[
             current_lesson = available_lessons[0]
             current_day_number = 1
             current_activity_type = "Explore"
-        else:
-            current_lesson = db.query(Lesson).first()
 
     today_lesson_payload = None
     if current_lesson:
@@ -110,6 +117,15 @@ def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[
             "character_reference": current_lesson_day.character_reference if current_lesson_day else current_lesson.character_connection,
             "completed": (current_lesson.id, current_day_number) in completed_pairs
         }
+        active_session = db.query(LessonSession).filter(
+            LessonSession.child_id == child.id,
+            LessonSession.lesson_id == current_lesson.id,
+            LessonSession.day_number == current_day_number
+        ).first()
+        active_state = active_session.pedagogical_state if active_session else {}
+        today_lesson_payload["practice_ready"] = bool(
+            active_state.get("practice_ready") or active_state.get("current_phase") == "PRACTICE_READY"
+        )
 
     # 4. Subject Progress Breakdown based strictly on child's enrolled subjects
     progress_by_subject = []
@@ -120,6 +136,9 @@ def get_student_dashboard(child_id: int, db: Session = Depends(get_db)) -> Dict[
             .filter(Unit.subject_id == subj.id, Lesson.level == student_level)
             .all()
         )
+        subj_lessons = [lesson for lesson in subj_lessons if any(
+            (day.status or "").lower() in {"active", "published"} for day in lesson.days
+        ) or not lesson.days]
         total_subj_lessons = len(subj_lessons)
         if total_subj_lessons > 0:
             subj_lesson_ids = {l.id for l in subj_lessons}

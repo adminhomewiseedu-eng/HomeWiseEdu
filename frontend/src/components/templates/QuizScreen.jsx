@@ -1,46 +1,112 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import QuizCard from '../organisms/QuizCard';
-import TutorHeader from '../organisms/TutorHeader';
-import TutorChatStream from '../organisms/TutorChatStream';
 import { lessonAPI, curriculumAPI } from '../../services/api';
 import { speechService } from '../../services/speech';
+import { advanceAfterFeedback } from '../../utils/voiceFlow';
 
-export default function QuizScreen({ lesson, lessonId, child, onExit, onQuizComplete }) {
+export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onExit, onQuizComplete }) {
   const [activeLesson, setActiveLesson] = useState(lesson || null);
   const effectiveLessonId = lessonId || lesson?.id || 1;
+  const studentName = child?.name || 'Student';
 
-  useEffect(() => {
-    if (!activeLesson?.quiz_questions?.length) {
-      curriculumAPI.getLessonDetail(effectiveLessonId)
-        .then((res) => {
-          if (res.data) setActiveLesson(res.data);
-        })
-        .catch((err) => console.error('Failed to load quiz questions:', err));
-    }
-  }, [effectiveLessonId, activeLesson]);
-
-  const questions = activeLesson?.quiz_questions?.length ? activeLesson.quiz_questions : [];
   const [qIdx, setQIdx] = useState(0);
   const [selectedOpt, setSelectedOpt] = useState(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [answersList, setAnswersList] = useState([]);
   const [score, setScore] = useState(0);
-  const [messages, setMessages] = useState([
-    { sender: 'tutor', text: `Ready, ${child?.name || 'Student'}? Here's your first question. Take your time! 🌟` },
-  ]);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceFeedbackStatus, setVoiceFeedbackStatus] = useState('Cheering you on! 🌟');
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [loadError, setLoadError] = useState('');
+
+  const isMountedRef = useRef(true);
+  const spokenQuestionIdRef = useRef(null);
+
+  // Play audio safely using authoritative single audio coordinator
+  const playTutorVoice = useCallback(async (textToSpeak) => {
+    if (!textToSpeak || !isMountedRef.current) return;
+    return speechService.playAuthoritativeAudio(
+      textToSpeak,
+      () => {
+        if (isMountedRef.current) setIsSpeaking(true);
+      },
+      () => {
+        if (isMountedRef.current) setIsSpeaking(false);
+      }
+    );
+  }, []);
+
+  // Load lesson details and quiz questions if needed
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    if (!activeLesson?.title) {
+      curriculumAPI.getLessonDetail(effectiveLessonId)
+        .then((res) => {
+          if (res.data && isMountedRef.current) {
+            setActiveLesson(res.data);
+          }
+        })
+        .catch((err) => console.error('Failed to load quiz questions:', err));
+    }
+    lessonAPI.getQuiz(child?.id || 1, effectiveLessonId, dayNumber)
+      .then((res) => {
+        if (isMountedRef.current) setQuizQuestions(res.data || []);
+      })
+      .catch((err) => {
+        if (isMountedRef.current) setLoadError(err.response?.data?.detail || 'Practice quiz is not ready yet.');
+      });
+
+    return () => {
+      isMountedRef.current = false;
+      speechService.cancelAllSpeech();
+    };
+  }, [effectiveLessonId, dayNumber, child?.id]);
+
+  const questions = quizQuestions;
+  const currentQ = questions[qIdx] || questions[0];
+
+  // Speak opening question prompt aloud once per unique question
+  useEffect(() => {
+    if (!currentQ || isAnswered) return;
+
+    // Prevent duplicate speech for the same question on rerenders/StrictMode
+    const questionKey = `${currentQ.id || qIdx}_${qIdx}`;
+    if (spokenQuestionIdRef.current === questionKey) return;
+
+    const questionIntro = qIdx === 0
+      ? `Ready ${studentName}? Here is your first question: ${currentQ.question}`
+      : `Question ${qIdx + 1}: ${currentQ.question}`;
+
+    setVoiceFeedbackStatus(`Reading Question ${qIdx + 1}…`);
+    const timer = setTimeout(() => {
+      if (isMountedRef.current && !isAnswered) {
+        spokenQuestionIdRef.current = questionKey;
+        playTutorVoice(questionIntro);
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      // Strict Mode can clean up the first effect before playback; allow the
+      // replacement effect to own the single narration.
+      if (spokenQuestionIdRef.current === questionKey) {
+        spokenQuestionIdRef.current = null;
+      }
+    };
+  }, [qIdx, currentQ, studentName, isAnswered, playTutorVoice]);
 
   if (!questions.length) {
     return (
-      <div className="wrap pad" style={{ textAlign: 'center', padding: '100px 0' }}>
-        <h2>Loading quiz...</h2>
+      <div style={{ height: '100vh', background: '#FAF7FD', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--plum)' }}>
+        <h2>{loadError || 'Loading quiz assessment...'}</h2>
       </div>
     );
   }
 
-  const currentQ = questions[qIdx] || questions[0];
-
   const handleSubmitAnswer = async () => {
     if (!selectedOpt || isAnswered) return;
+    speechService.cancelAllSpeech();
     setIsAnswered(true);
 
     const isCorrect = String(selectedOpt).trim().toLowerCase() === String(currentQ.correct_answer).trim().toLowerCase();
@@ -50,15 +116,38 @@ export default function QuizScreen({ lesson, lessonId, child, onExit, onQuizComp
     const updatedAnswers = [...answersList, { question_id: currentQ.id, selected_answer: selectedOpt }];
     setAnswersList(updatedAnswers);
 
-    const feedback = isCorrect ? currentQ.explanation_correct : currentQ.explanation_incorrect;
-    setMessages((prev) => [
-      ...prev,
-      { sender: 'me', text: String(selectedOpt) },
-      { sender: 'tutor', text: feedback || (isCorrect ? 'Correct! 🌟' : 'Good try!') }
-    ]);
-    speechService.speak(feedback || (isCorrect ? 'Great job!' : 'Good try!'));
+    // Dynamic, interactive spoken feedback from Ms. Ade
+    let spokenReaction = '';
+    if (isCorrect) {
+      const compliments = [
+        `Great job, ${studentName}! That's exactly right.`,
+        `Spot on, ${studentName}! Wonderful work!`,
+        `Brilliant answer, ${studentName}! You nailed it.`,
+        `Excellent thinking, ${studentName}! That is correct.`
+      ];
+      spokenReaction = compliments[qIdx % compliments.length];
+      if (currentQ.explanation_correct) {
+        spokenReaction += ` ${currentQ.explanation_correct}`;
+      }
+      setVoiceFeedbackStatus('🎉 Correct! Great job!');
+    } else {
+      const guidance = [
+        `Good try, ${studentName}!`,
+        `Nice effort, ${studentName}!`,
+        `Good thinking, ${studentName}!`
+      ];
+      spokenReaction = guidance[qIdx % guidance.length];
+      if (currentQ.explanation_incorrect) {
+        spokenReaction += ` Remember: ${currentQ.explanation_incorrect}. Let's try the next one!`;
+      } else {
+        spokenReaction += ` The correct answer was ${currentQ.correct_answer}. Let's keep learning together!`;
+      }
+      setVoiceFeedbackStatus('💡 Good effort! Keep going!');
+    }
 
-    setTimeout(async () => {
+    // The next question is owned by actual feedback playback completion.
+    await advanceAfterFeedback(playTutorVoice, spokenReaction, async () => {
+      if (!isMountedRef.current) return;
       if (qIdx < questions.length - 1) {
         setQIdx(qIdx + 1);
         setSelectedOpt(null);
@@ -66,7 +155,7 @@ export default function QuizScreen({ lesson, lessonId, child, onExit, onQuizComp
       } else {
         const effectiveChildId = child?.id || 1;
         try {
-          const res = await lessonAPI.submitQuiz(effectiveChildId, effectiveLessonId, updatedAnswers);
+          const res = await lessonAPI.submitQuiz(effectiveChildId, effectiveLessonId, dayNumber, updatedAnswers);
           onQuizComplete(res.data);
         } catch (e) {
           const pct = Math.round((finalScore / questions.length) * 100);
@@ -80,40 +169,54 @@ export default function QuizScreen({ lesson, lessonId, child, onExit, onQuizComp
           });
         }
       }
-    }, 2000);
+    });
   };
 
   return (
-    <div className="lesson-screen">
+    <div className="lesson-screen voice-first-mode">
+      {/* Top Bar Navigation */}
       <div className="lesson-bar">
-        <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }}>←</div>
-        <div>
-          <div className="lb-title">{activeLesson?.title || 'Lesson Quiz'}</div>
-          <div className="lb-sub">Question {qIdx + 1} of {questions.length}</div>
+        <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }} title="Back to Dashboard">
+          ←
         </div>
-        <div className="lb-progress">
-          <div className="track">
-            <span style={{ width: `${Math.round(((qIdx + 1) / questions.length) * 100)}%` }} />
-          </div>
+        <div className="meta">
+          <span className="crumb">Practice Quiz</span>
+          <h2>{activeLesson?.title || 'Lesson Assessment'}</h2>
         </div>
-        <div className="pill" style={{ background: '#FEF3C7', color: '#92400E' }}>❓ Quiz</div>
       </div>
 
-      <div className="lesson-body">
-        <div className="doc-side" style={{ display: 'flex', alignItems: 'center' }}>
+      {/* Floating Voice Status Orb */}
+      <div className="floating-voice-bar">
+        <div className={`voice-orb ${isSpeaking ? 'speaking' : ''}`}>
+          <div className="orb-ring ring-1"></div>
+          <div className="orb-ring ring-2"></div>
+          <div className="orb-ring ring-3"></div>
+          <div className="orb-core">
+            <span className="orb-icon">
+              {isSpeaking ? '🗣️' : '🌟'}
+            </span>
+          </div>
+        </div>
+        <div className="voice-text">
+          <span className="voice-label">Ms. Ade (AI Tutor)</span>
+          <span className="voice-status-text">
+            {isSpeaking ? 'Speaking to you…' : voiceFeedbackStatus}
+          </span>
+        </div>
+      </div>
+
+      {/* Centered Glassmorphic Quiz View */}
+      <div className="voice-lesson-container">
+        <div className="textbook-page" style={{ maxWidth: '680px', margin: '0 auto' }}>
           <QuizCard
             questionNumber={qIdx + 1}
             totalQuestions={questions.length}
             questionData={currentQ}
             selectedOption={selectedOpt}
             isAnswered={isAnswered}
-            onSelectOption={setSelectedOpt}
+            onSelectOption={(opt) => !isAnswered && setSelectedOpt(opt)}
             onSubmitAnswer={handleSubmitAnswer}
           />
-        </div>
-        <div className="tutor-side">
-          <TutorHeader studentName={child?.name || 'Student'} status="Cheering you on!" />
-          <TutorChatStream messages={messages} />
         </div>
       </div>
     </div>

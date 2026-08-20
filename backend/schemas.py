@@ -90,6 +90,8 @@ class LessonDayOut(BaseModel):
     ai_script: Optional[str] = None
     real_world_context: Optional[str] = None
     visual_support: Optional[str] = None
+    origin_of_knowledge: Optional[str] = None
+    video_url: Optional[str] = None
     practice_questions: Optional[List[Any]] = []
     vocabulary: Optional[List[Any]] = []
     reading_recommendations: Optional[List[str]] = []
@@ -103,6 +105,7 @@ class LessonSummaryOut(BaseModel):
     title: str
     topic: Optional[str] = None
     order_num: int
+    curriculum_country: Optional[str] = None
     default_evidence_task: Optional[str] = None
 
 class LessonDetailOut(BaseModel):
@@ -113,6 +116,7 @@ class LessonDetailOut(BaseModel):
     title: str
     topic: Optional[str] = None
     order_num: int
+    curriculum_country: Optional[str] = None
     objectives: List[str]
     learn_content: str
     examples: List[Dict[str, Any]]
@@ -168,7 +172,7 @@ class EvidenceOut(BaseModel):
     submission_type: str
     content: Optional[str] = None
     file_upload: Optional[str] = None
-    score: int
+    score: Optional[int] = None
     ai_feedback: str
     verified: bool
     created_at: datetime.datetime
@@ -181,6 +185,7 @@ class QuizAnswer(BaseModel):
 class QuizSubmission(BaseModel):
     child_id: int
     lesson_id: int
+    day_number: int = 1
     answers: List[QuizAnswer]
 
 class QuizResultOut(BaseModel):
@@ -195,14 +200,21 @@ class QuizResultOut(BaseModel):
 class AITutorChatRequest(BaseModel):
     child_id: int
     lesson_id: int
+    day_number: int = 1
     current_tab: int # 0=Objectives, 1=Learn, 2=Examples, 3=Words, 4=Remember
     message_history: Optional[List[Dict[str, str]]] = []
     user_prompt: Optional[str] = None
+    event_type: Optional[str] = None
+    delivery_token: Optional[str] = None
 
 class AITutorChatResponse(BaseModel):
     tutor_reply: str
     speech_text: str
     suggested_follow_up: Optional[str] = None
+    pedagogical_state: Optional[Dict[str, Any]] = None
+    practice_ready: Optional[bool] = False
+    delivery_token: Optional[str] = None
+    requires_delivery_confirmation: bool = False
 
 # Parent Alerts & Recommendations
 class AlertOut(BaseModel):

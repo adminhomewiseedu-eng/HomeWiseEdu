@@ -1,106 +1,157 @@
 import React from 'react';
 
-const TABS = [
-  { id: 0, label: '🎯 Objectives' },
-  { id: 1, label: '📖 Learn' },
-  { id: 2, label: '📐 Examples' },
-  { id: 3, label: '🔑 Words' },
-  { id: 4, label: '✅ Remember' },
-];
-
-export default function LessonDocView({ lesson, activeTab, onSelectTab, levelLabel = 'Level 4' }) {
+export default function LessonDocView({ lesson, levelLabel = 'Reception', onProceedToQuiz, practiceReady = false }) {
   if (!lesson) return null;
 
   return (
-    <div className="doc">
-      <div className="doc-header">
-        <div className="badge2">
-          Lesson {lesson.order_num || 1} · {levelLabel}
+    <div className="doc-page">
+      {/* Textbook / Study Guide Top Banner */}
+      <div className="doc-page-header">
+        <div className="doc-badge-row">
+          <span className="doc-badge doc-badge-subject">
+            {lesson.unit?.subject?.title || 'Academic Pathway'}
+          </span>
+          <span className="doc-badge doc-badge-level">
+            {levelLabel}
+          </span>
+          <span className="doc-badge doc-badge-num">
+            Lesson {lesson.order_num || 1}
+          </span>
         </div>
-        <h1>{lesson.title}</h1>
+        <h1 className="doc-page-title">{lesson.title}</h1>
+        {lesson.topic && <div className="doc-page-topic">Topic: {lesson.topic}</div>}
       </div>
 
-      <div className="doc-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={`doc-tab ${activeTab === t.id ? 'active' : ''}`}
-            onClick={() => onSelectTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Main Document Content Flow (Structured from Top to Bottom) */}
+      <div className="doc-page-body">
 
-      <div className="doc-content">
-        {activeTab === 0 && (
-          <div className="doc-section">
-            <h2>What you'll learn today</h2>
-            {lesson.objectives?.map((obj, i) => (
-              <div key={i} className="doc-obj">
-                <div className="n">{i + 1}</div>
-                <p style={{ margin: 0 }}>{obj}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 1 && (
-          <div className="doc-section">
-            <h2>Core Learning Content</h2>
-            <div style={{ whiteSpace: 'pre-line', lineHeight: 1.7, fontSize: 16 }}>{lesson.learn_content}</div>
-          </div>
-        )}
-
-        {activeTab === 2 && (
-          <div className="doc-section">
-            <h2>Let's see it in action</h2>
-            {lesson.examples?.map((ex, i) => (
-              <div key={i} className="example" style={{ borderLeftColor: i === 1 ? 'var(--grape)' : undefined }}>
-                <div className="calc">{ex.calc || ex.title}</div>
-                <p style={{ margin: '8px 0 0', fontSize: 14 }}>{ex.explanation}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 3 && (
-          <div className="doc-section">
-            <h2>Key words</h2>
-            <div className="vocab-grid">
-              {lesson.vocabulary?.map((v, i) => (
-                <div key={i} className="vocab">
-                  <div className="w">{v.word}</div>
-                  <div className="d">{v.definition}</div>
+        {/* 1. Learning Objectives */}
+        {lesson.objectives && lesson.objectives.length > 0 && (
+          <section className="doc-card doc-card-objectives">
+            <div className="doc-card-title">
+              <span className="icon">🎯</span>
+              <h2>1. What We'll Learn Today</h2>
+            </div>
+            <div className="doc-obj-list">
+              {lesson.objectives.map((obj, i) => (
+                <div key={i} className="doc-obj-item">
+                  <div className="doc-obj-num">{i + 1}</div>
+                  <p>{obj}</p>
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* 2. Core Learning Content / Key Concept */}
+        {lesson.learn_content && (
+          <section className="doc-card doc-card-learn">
+            <div className="doc-card-title">
+              <span className="icon">💡</span>
+              <h2>2. Let's Learn the Concept</h2>
+            </div>
+            <div className="doc-learn-text">
+              {lesson.learn_content.split('\n\n').map((paragraph, i) => (
+                <p key={i}>{paragraph}</p>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 3. Worked Examples in Action */}
+        {lesson.examples && lesson.examples.length > 0 && (
+          <section className="doc-card doc-card-examples">
+            <div className="doc-card-title">
+              <span className="icon">🧸</span>
+              <h2>3. Let's See It in Action!</h2>
+            </div>
+            <div className="doc-examples-list">
+              {lesson.examples.map((ex, i) => (
+                <div key={i} className="doc-example-box">
+                  <div className="doc-example-head">
+                    <span className="tag">Example {i + 1}</span>
+                    <span className="calc">{ex.calc || ex.title}</span>
+                  </div>
+                  {ex.explanation && (
+                    <p className="doc-example-desc">{ex.explanation}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 4. Vocabulary & Key Words */}
+        {lesson.vocabulary && lesson.vocabulary.length > 0 && (
+          <section className="doc-card doc-card-vocab">
+            <div className="doc-card-title">
+              <span className="icon">🔑</span>
+              <h2>4. Word Power (Key Vocabulary)</h2>
+            </div>
+            <div className="doc-vocab-grid">
+              {lesson.vocabulary.map((v, i) => (
+                <div key={i} className="doc-vocab-card">
+                  <div className="word">{v.word}</div>
+                  <div className="def">{v.definition}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 5. Key Points to Remember */}
+        {lesson.key_points && lesson.key_points.length > 0 && (
+          <section className="doc-card doc-card-remember">
+            <div className="doc-card-title">
+              <span className="icon">🌟</span>
+              <h2>5. Remember These!</h2>
+            </div>
+            <div className="doc-points-list">
+              {lesson.key_points.map((kp, i) => (
+                <div key={i} className="doc-point-item">
+                  <div className="check">✓</div>
+                  <p>{kp}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 6. Scripture Reflection & Character Habit */}
+        {(lesson.bible_reflection || lesson.character_connection) && (
+          <section className="doc-card doc-card-growth">
+            {lesson.bible_reflection && (
+              <div className="doc-growth-box scripture">
+                <div className="growth-header">
+                  <span>✝️</span>
+                  <strong>Scripture Reflection</strong>
+                </div>
+                <p>{lesson.bible_reflection}</p>
+              </div>
+            )}
+
+            {lesson.character_connection && (
+              <div className="doc-growth-box character">
+                <div className="growth-header">
+                  <span>🌱</span>
+                  <strong>Character Habit</strong>
+                </div>
+                <p>{lesson.character_connection}</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 7. Lesson Practice Progression Action */}
+        {onProceedToQuiz && (
+          <div className="doc-quiz-cta-box">
+            <button className="doc-quiz-btn" onClick={onProceedToQuiz} disabled={!practiceReady}>
+              <span>{practiceReady ? "✓ I've Discussed Today's Lesson — Start Practice Quiz!" : 'Complete the guided lesson to unlock practice'}</span>
+              <span className="cta-icon">🏆 ➔</span>
+            </button>
           </div>
         )}
 
-        {activeTab === 4 && (
-          <div className="doc-section">
-            <h2>Remember these!</h2>
-            {lesson.key_points?.map((kp, i) => (
-              <div key={i} className="keypoint">
-                <div className="c">✓</div>
-                <p style={{ margin: 0 }}>{kp}</p>
-              </div>
-            ))}
-            {lesson.bible_reflection && (
-              <div style={{ marginTop: 20, padding: 14, background: '#F3E8FF', borderRadius: 12, borderLeft: '4px solid var(--plum)' }}>
-                <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--plum)', marginBottom: 4 }}>✝️ Scripture Reflection</div>
-                <div style={{ fontSize: 13, color: 'var(--ink)' }}>{lesson.bible_reflection}</div>
-              </div>
-            )}
-            {lesson.character_connection && (
-              <div style={{ marginTop: 12, padding: 14, background: '#FEF3C7', borderRadius: 12, borderLeft: '4px solid var(--sun)' }}>
-                <div style={{ fontWeight: 800, fontSize: 13, color: '#92400E', marginBottom: 4 }}>🌟 Character Habit</div>
-                <div style={{ fontSize: 13, color: 'var(--ink)' }}>{lesson.character_connection}</div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

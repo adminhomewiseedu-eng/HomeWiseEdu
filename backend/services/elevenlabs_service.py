@@ -4,6 +4,8 @@ import logging
 import httpx
 from typing import Optional, Dict, Any
 from ..config import settings
+from .storage_service import atomic_write_bytes
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,12 @@ async def generate_speech_audio(text: str, voice_id: Optional[str] = None) -> Op
     logger.info(f"Using configured ElevenLabs voice ID: {masked_voice}")
     
     # 1. Compute deterministic content hash for caching
-    content_key = f"{clean_text}_{active_voice_id}".encode("utf-8")
+    voice_profile = (
+        f"{settings.ELEVENLABS_MODEL_ID}:{settings.ELEVENLABS_STABILITY}:"
+        f"{settings.ELEVENLABS_SIMILARITY_BOOST}:{settings.ELEVENLABS_STYLE}:"
+        f"{settings.ELEVENLABS_USE_SPEAKER_BOOST}:{settings.ELEVENLABS_SPEED}"
+    )
+    content_key = f"elevenlabs_{active_voice_id}_{voice_profile}_{clean_text}".encode("utf-8")
     audio_hash = hashlib.sha256(content_key).hexdigest()
     file_name = f"{audio_hash}.mp3"
     file_path = os.path.join(settings.AUDIO_DIR, file_name)
@@ -52,10 +59,13 @@ async def generate_speech_audio(text: str, voice_id: Optional[str] = None) -> Op
     }
     payload = {
         "text": clean_text[:1200], # safe character limit per audio clip
-        "model_id": "eleven_multilingual_v2",
+        "model_id": settings.ELEVENLABS_MODEL_ID,
         "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
+            "stability": settings.ELEVENLABS_STABILITY,
+            "similarity_boost": settings.ELEVENLABS_SIMILARITY_BOOST,
+            "style": settings.ELEVENLABS_STYLE,
+            "use_speaker_boost": settings.ELEVENLABS_USE_SPEAKER_BOOST,
+            "speed": settings.ELEVENLABS_SPEED,
         }
     }
 
@@ -63,13 +73,12 @@ async def generate_speech_audio(text: str, voice_id: Optional[str] = None) -> Op
         async with httpx.AsyncClient(timeout=25.0) as client:
             response = await client.post(url, headers=headers, json=payload)
             if response.status_code == 200:
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
+                atomic_write_bytes(Path(file_path), response.content)
                 logger.info(f"Generated and cached ElevenLabs audio: {file_name}")
                 return relative_url
             else:
-                logger.warning(f"ElevenLabs API error ({response.status_code}): {response.text}")
-    except Exception as e:
-        logger.error(f"Error calling ElevenLabs API: {e}")
+                logger.warning("ElevenLabs provider failure status=%s", response.status_code)
+    except Exception:
+        logger.exception("ElevenLabs provider request failed")
 
     return None

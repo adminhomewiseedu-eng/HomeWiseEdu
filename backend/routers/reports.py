@@ -5,14 +5,17 @@ from ..database import get_db
 from ..models import Child, User, StudentProgress, LearningEvidence, ChildSubject, Subject, Lesson
 from ..utils.levels import get_level_label
 from ..services.openai_service import generate_weekly_summary
+from .auth import get_current_user, authorize_child
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 @router.get("/student/{child_id}")
-async def get_student_report(child_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
-    child = db.query(Child).filter(Child.id == child_id).first()
-    if not child:
-        raise HTTPException(status_code=404, detail="Student not found")
+async def get_student_report(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    child = authorize_child(db, current_user, child_id)
 
     parent = db.query(User).filter(User.id == child.parent_id).first()
     edu_sys = child.education_system or "UK"

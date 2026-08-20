@@ -5,7 +5,7 @@ import TutorChatStream from '../organisms/TutorChatStream';
 import { evidenceAPI, curriculumAPI } from '../../services/api';
 import { speechService } from '../../services/speech';
 
-export default function EvidenceSubmitScreen({ lesson, lessonId, child, quizResult, onExit, onSubmitSuccess }) {
+export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, child, quizResult, onExit, onSubmitSuccess }) {
   const [activeLesson, setActiveLesson] = useState(lesson || null);
   const effectiveLessonId = lessonId || lesson?.id || 1;
 
@@ -45,7 +45,7 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, child, quizResu
     const formData = new FormData();
     formData.append('child_id', child?.id || 1);
     formData.append('lesson_id', effectiveLessonId);
-    formData.append('day_number', activeLesson?.day_number || 1);
+    formData.append('day_number', dayNumber);
     formData.append('subject', subjectName);
     formData.append('lesson_title', lessonTitle);
     formData.append('skill', activeLesson?.objectives?.[0] || 'Core Skill Mastery');

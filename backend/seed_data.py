@@ -1,4 +1,5 @@
 import datetime
+import logging
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from .database import engine, Base, SessionLocal
@@ -8,12 +9,10 @@ from .models import (
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
 def get_password_hash(password: str) -> str:
-    try:
-        return pwd_context.hash(password)
-    except Exception:
-        return f"plain:{password}"
+    return pwd_context.hash(password)
 
 OFFICIAL_SUBJECTS = [
     {"title": "Mathematics", "slug": "mathematics", "icon": "📐", "color": "#38BDF8", "description": "Core numeracy, arithmetic, fractions, problem solving and algebra"},
@@ -30,9 +29,17 @@ OFFICIAL_SUBJECTS = [
     {"title": "Understanding The Word", "slug": "understanding-the-word", "icon": "✝️", "color": "#FBBF24", "description": "Biblical wisdom, character virtues, moral foundation and scripture studies"},
 ]
 
-def seed():
+def seed(include_demo: bool = False):
     Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
+
+    # One-time development-data migration from the removed legacy plaintext
+    # fallback. Hashing failure aborts startup rather than preserving plaintext.
+    legacy_users = db.query(User).filter(User.password_hash.like("plain:%")).all()
+    for legacy_user in legacy_users:
+        legacy_user.password_hash = get_password_hash(legacy_user.password_hash[len("plain:"):])
+    if legacy_users:
+        db.commit()
 
     # 1. Ensure all 12 official subjects exist
     subject_map = {}
@@ -50,6 +57,10 @@ def seed():
             db.commit()
             db.refresh(subj)
         subject_map[subj.slug] = subj
+
+    if not include_demo:
+        db.close()
+        return
 
     # 2. Ensure default demo parent & admin exist
     parent_user = db.query(User).filter(User.email == "sarah@email.com").first()
@@ -369,7 +380,11 @@ def seed():
         db.commit()
 
     db.close()
-    print("Curriculum & Demo Seed Data Complete!")
+    logger.info("Curriculum and demo seed completed")
 
 if __name__ == "__main__":
-    seed()
+    import argparse
+    parser = argparse.ArgumentParser(description="Seed HomeWiseEdu reference or local demo data")
+    parser.add_argument("--demo", action="store_true", help="also create known local demo accounts and sample activity")
+    args = parser.parse_args()
+    seed(include_demo=args.demo)

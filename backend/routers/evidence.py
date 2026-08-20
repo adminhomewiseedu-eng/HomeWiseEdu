@@ -1,15 +1,16 @@
-import os
-import shutil
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..database import get_db
-from ..models import LearningEvidence, Child, Lesson, LessonDay, StudentProgress, AIInteraction
+from ..models import LearningEvidence, Child, Lesson, LessonDay, StudentProgress, AIInteraction, User
 from ..schemas import EvidenceOut
 from ..services.openai_service import evaluate_student_work
+from ..services.storage_service import save_evidence_upload
 from ..config import settings
 from ..utils.levels import get_level_label
+from .auth import get_current_user, authorize_child
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 
@@ -25,22 +26,15 @@ async def submit_evidence(
     submission_type: str = Form("text"),
     content: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    child = db.query(Child).filter(Child.id == child_id).first()
-    if not child:
-        raise HTTPException(status_code=404, detail="Child not found")
+    child = authorize_child(db, current_user, child_id)
 
     saved_file_url = None
     file_name = None
     if file and file.filename:
-        file_ext = os.path.splitext(file.filename)[1]
-        unique_name = f"{uuid.uuid4()}{file_ext}"
-        dest_path = os.path.join(settings.UPLOAD_DIR, unique_name)
-        with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        saved_file_url = f"/uploads/{unique_name}"
-        file_name = file.filename
+        saved_file_url, file_name = await save_evidence_upload(file)
 
     # Retrieve lesson context
     task_instructions = "Demonstrate your understanding and show your step-by-step working."
@@ -87,14 +81,24 @@ async def submit_evidence(
         submission_type="file" if saved_file_url else submission_type,
         content=content,
         file_upload=saved_file_url,
+        stored_file_name=file_name,
         score=eval_result["score"],
         ai_feedback=eval_result["ai_feedback"],
         verified=eval_result["verified"]
     )
     db.add(evidence)
+    db.flush()
+    if saved_file_url:
+        evidence.file_upload = f"/api/evidence/{evidence.id}/file"
 
-    # Mark day & lesson completed in progress
-    if lesson_id:
+    evaluation_verified = (
+        eval_result.get("verified") is True
+        and eval_result.get("score") is not None
+        and eval_result.get("mastery_status") not in {None, "pending_review"}
+    )
+
+    # Completion-dependent progress is granted only after verified evaluation.
+    if lesson_id and evaluation_verified:
         progress = db.query(StudentProgress).filter(
             StudentProgress.child_id == child_id,
             StudentProgress.lesson_id == lesson_id,
@@ -116,8 +120,10 @@ async def submit_evidence(
             progress.quiz_score = eval_result["score"]
             progress.mastery_status = eval_result.get("mastery_status", "competent")
 
-    # Reward XP
-    child.xp += 25
+    # Pending review evidence is saved, but earns no completion XP or mastery.
+    if evaluation_verified:
+        child.xp += 25
+        evidence.completion_xp_awarded = True
     
     # Log AI evaluation interaction
     interaction = AIInteraction(
@@ -135,6 +141,89 @@ async def submit_evidence(
 
     return evidence
 
+
+@router.get("/{evidence_id}/file")
+def download_evidence_file(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    evidence = db.query(LearningEvidence).filter(LearningEvidence.id == evidence_id).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    authorize_child(db, current_user, evidence.child_id)
+    stored_name = getattr(evidence, "stored_file_name", None)
+    if not stored_name:
+        raise HTTPException(status_code=404, detail="Evidence file is not available")
+    target = (Path(settings.EVIDENCE_DIR) / stored_name).resolve()
+    if target.parent != Path(settings.EVIDENCE_DIR).resolve() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Evidence file is not available")
+    return FileResponse(target, filename=f"evidence{target.suffix}")
+
+
+@router.post("/{evidence_id}/retry-evaluation", response_model=EvidenceOut)
+async def retry_evidence_evaluation(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    evidence = db.query(LearningEvidence).filter(LearningEvidence.id == evidence_id).with_for_update().first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    child = authorize_child(db, current_user, evidence.child_id)
+    if evidence.verified and evidence.score is not None:
+        return evidence
+
+    lesson = db.query(Lesson).filter(Lesson.id == evidence.lesson_id).first() if evidence.lesson_id else None
+    level_num = child.level if child.level is not None else 0
+    level_label = get_level_label(level_num, child.education_system or "UK")
+    objectives = lesson.objectives if lesson and lesson.objectives else [evidence.skill]
+    task = lesson.default_evidence_task if lesson and lesson.default_evidence_task else "Demonstrate your understanding and show your step-by-step working."
+    context = {
+        "student_name": child.name, "level": level_num, "level_label": level_label,
+        "subject": evidence.subject, "lesson_topic": evidence.lesson_title,
+        "day_number": evidence.day_number,
+        "activity_type": "Explore" if evidence.day_number == 1 else "Practice" if evidence.day_number == 2 else "Apply",
+        "learning_objectives": objectives, "task_instructions": task,
+    }
+    result = await evaluate_student_work(
+        student_name=child.name,
+        context=context,
+        submission_text=evidence.content or "Uploaded file evidence",
+        file_name=evidence.stored_file_name,
+    )
+    verified = result.get("verified") is True and result.get("score") is not None and result.get("mastery_status") not in {None, "pending_review"}
+    evidence.score = result.get("score")
+    evidence.ai_feedback = result.get("ai_feedback", "Evaluation remains pending review.")
+    evidence.verified = verified
+    if verified:
+        if evidence.lesson_id:
+            progress = db.query(StudentProgress).filter(
+                StudentProgress.child_id == child.id,
+                StudentProgress.lesson_id == evidence.lesson_id,
+                StudentProgress.day_number == evidence.day_number,
+            ).first()
+            if not progress:
+                progress = StudentProgress(child_id=child.id, lesson_id=evidence.lesson_id,
+                    day_number=evidence.day_number, activity_type=context["activity_type"], status="completed")
+                db.add(progress)
+            progress.status = "completed"
+            progress.quiz_score = result["score"]
+            progress.mastery_status = result["mastery_status"]
+        if not evidence.completion_xp_awarded:
+            child.xp += 25
+            evidence.completion_xp_awarded = True
+    db.add(AIInteraction(child_id=child.id, lesson_id=evidence.lesson_id, day_number=evidence.day_number,
+                         role="assistant", prompt="Pending evidence retry", response=evidence.ai_feedback))
+    db.commit()
+    db.refresh(evidence)
+    return evidence
+
 @router.get("/portfolio/{child_id}", response_model=List[EvidenceOut])
-def get_portfolio(child_id: int, db: Session = Depends(get_db)):
+def get_portfolio(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    authorize_child(db, current_user, child_id)
     return db.query(LearningEvidence).filter(LearningEvidence.child_id == child_id).order_by(LearningEvidence.created_at.desc()).all()

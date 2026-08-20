@@ -5,7 +5,7 @@ from ..database import get_db
 from ..models import User, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject
 from ..schemas import RecommendationAction
 from ..utils.levels import get_level_label
-from .auth import get_current_user_id
+from .auth import get_current_user
 from typing import Optional
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
@@ -14,9 +14,13 @@ router = APIRouter(prefix="/api/parent", tags=["parent"])
 def get_parent_dashboard(
     parent_id: int, 
     db: Session = Depends(get_db),
-    auth_user_id: Optional[int] = Depends(get_current_user_id)
+    current_user: User = Depends(get_current_user)
 ):
-    target_id = auth_user_id or parent_id
+    if current_user.role != "admin" and current_user.id != parent_id:
+        raise HTTPException(status_code=403, detail="Cannot access another parent's dashboard")
+    if current_user.role not in {"parent", "admin"}:
+        raise HTTPException(status_code=403, detail="Parent access required")
+    target_id = parent_id
     parent = db.query(User).filter(User.id == target_id).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Parent not found")
@@ -69,8 +73,8 @@ def get_parent_dashboard(
             "status_badge": "Needs attention" if has_high_alert else ("Just started" if completed == 0 else "Doing great!")
         })
 
-    alerts = db.query(ParentAlert).filter(ParentAlert.parent_id == parent_id).order_by(ParentAlert.created_at.desc()).all()
-    recommendations = db.query(AIRecommendation).filter(AIRecommendation.parent_id == parent_id).order_by(AIRecommendation.created_at.desc()).all()
+    alerts = db.query(ParentAlert).filter(ParentAlert.parent_id == target_id).order_by(ParentAlert.created_at.desc()).all()
+    recommendations = db.query(AIRecommendation).filter(AIRecommendation.parent_id == target_id).order_by(AIRecommendation.created_at.desc()).all()
     
     child_ids = [c.id for c in children]
     recent_evidence = db.query(LearningEvidence).filter(
@@ -91,10 +95,17 @@ def get_parent_dashboard(
     }
 
 @router.post("/recommendations/{rec_id}/action")
-def handle_recommendation_action(rec_id: int, action: RecommendationAction, db: Session = Depends(get_db)):
+def handle_recommendation_action(
+    rec_id: int,
+    action: RecommendationAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     rec = db.query(AIRecommendation).filter(AIRecommendation.id == rec_id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    if current_user.role != "admin" and rec.parent_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized for this recommendation")
     rec.status = "approved" if action.action == "approve" else "overridden"
     db.commit()
     return {"message": f"Recommendation {rec.status}", "status": rec.status}

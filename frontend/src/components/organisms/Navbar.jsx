@@ -4,7 +4,7 @@ import BrandLogo from '../molecules/BrandLogo';
 export default function Navbar({ currentScreen, userRole, onNavigate, activeChild, currentUser, onLogout }) {
   const normalized = (currentScreen || '').replace('/', '');
   const isHidden = ['', 'landing', 'signup', 'login', 'add-child', 'addchild', 'lesson', 'quiz', 'submit', 'complete'].includes(normalized);
-  if (isHidden) return null;
+  if (isHidden || normalized.startsWith('admin')) return null;
 
   const initial = currentUser?.avatar || currentUser?.name?.[0]?.toUpperCase() || 'U';
 
