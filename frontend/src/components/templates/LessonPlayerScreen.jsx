@@ -37,6 +37,7 @@ export default function LessonPlayerScreen({
   const voiceStatusRef = useRef('thinking');
   const currentTutorSpeechRef = useRef('');
   const bargeInTriggeredRef = useRef(false);
+  const tutorPlaybackStartedAtRef = useRef(0);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
@@ -53,11 +54,16 @@ export default function LessonPlayerScreen({
   );
 
   const looksLikeTeacherEcho = useCallback((transcript) => {
-    const heard = [...normalizedWords(transcript)];
+    const normalizedHeard = String(transcript || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const normalizedTeacher = String(currentTutorSpeechRef.current || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!normalizedHeard) return true;
+    if (normalizedTeacher.includes(normalizedHeard)) return true;
+
+    const heard = [...normalizedWords(normalizedHeard)];
     if (!heard.length) return true;
-    const teacher = normalizedWords(currentTutorSpeechRef.current);
+    const teacher = normalizedWords(normalizedTeacher);
     const overlap = heard.filter((word) => teacher.has(word)).length / heard.length;
-    return overlap >= 0.75;
+    return overlap >= 0.5;
   }, []);
 
   // Ensure Web Audio context is initialized/resumed on user gesture
@@ -185,8 +191,18 @@ export default function LessonPlayerScreen({
       onStart: () => setMicActive(true),
       onResult: (transcript, meta = {}) => {
         if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
+        // Interim hypotheses frequently contain fragments coming from the
+        // teacher's speakers. Never pause playback until recognition finalizes.
+        if (!meta.latestIsFinal) return;
+        if (Date.now() - tutorPlaybackStartedAtRef.current < 1200) return;
         const spoken = (meta.latestTranscript || transcript).trim();
         if (!spoken || looksLikeTeacherEcho(spoken)) return;
+
+        const wordCount = spoken.split(/\s+/).filter(Boolean).length;
+        // A one-word result is too easily caused by room noise or TTS leakage.
+        // Explicit interruption words remain available for natural short barge-in.
+        const explicitInterrupt = /^(stop|wait|pause|sorry|repeat|again|what|why|how|hello|miss|missed)$/i.test(spoken);
+        if (wordCount < 2 && !explicitInterrupt) return;
 
         accumulatedTranscriptRef.current = spoken;
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -213,7 +229,7 @@ export default function LessonPlayerScreen({
           } else {
             triggerGuidance(finalSpoken);
           }
-        }, meta.isFinal ? 450 : 900);
+        }, 500);
       },
       onError: () => {},
       onEnd: () => {
@@ -247,6 +263,7 @@ export default function LessonPlayerScreen({
       textToSpeak,
       () => {
         if (isMountedRef.current) {
+          tutorPlaybackStartedAtRef.current = Date.now();
           updateVoiceStatus('speaking');
           startBargeInListening();
         }

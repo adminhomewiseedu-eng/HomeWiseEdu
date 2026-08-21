@@ -235,13 +235,22 @@ export class SpeechService {
         let latestTranscript = '';
         let confidence = 0;
         let isFinal = false;
+        let latestIsFinal = false;
         for (let i = 0; i < event.results.length; i++) {
           fullTranscript += event.results[i][0].transcript + ' ';
-          if (i >= event.resultIndex) latestTranscript += event.results[i][0].transcript + ' ';
+          if (i >= event.resultIndex) {
+            latestTranscript += event.results[i][0].transcript + ' ';
+            latestIsFinal = latestIsFinal || event.results[i].isFinal;
+          }
           confidence = Math.max(confidence, event.results[i][0].confidence || 0);
           isFinal = isFinal || event.results[i].isFinal;
         }
-        if (onResult) onResult(fullTranscript.trim(), { confidence, isFinal, latestTranscript: latestTranscript.trim() });
+        if (onResult) onResult(fullTranscript.trim(), {
+          confidence,
+          isFinal,
+          latestIsFinal,
+          latestTranscript: latestTranscript.trim()
+        });
       };
 
       this.recognition.onerror = (event) => {
