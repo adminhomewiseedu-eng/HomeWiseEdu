@@ -213,17 +213,17 @@ export default function LessonPlayerScreen({
       onStart: () => setMicActive(true),
       onResult: (transcript, meta = {}) => {
         if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
-        if (Date.now() - tutorPlaybackStartedAtRef.current < 1200) return;
+        // Briefly ignore startup leakage from the newly-started speaker, but do
+        // not impose a noticeable wake-word window on the student.
+        if (Date.now() - tutorPlaybackStartedAtRef.current < 500) return;
         const spoken = (meta.latestTranscript || transcript).trim();
         if (!spoken || looksLikeTeacherEcho(spoken)) return;
 
-        const wordCount = spoken.split(/\s+/).filter(Boolean).length;
         const interruptMatch = spoken.match(/^(stop|wait|pause|sorry|excuse me|ms ade)\b[,.! ]*(.*)$/i);
         const explicitInterrupt = Boolean(interruptMatch);
         // Explicit barge-in words pause immediately even while recognition is
         // interim. Other speech must first be finalized to avoid speaker echo.
         if (!explicitInterrupt && !meta.latestIsFinal) return;
-        if (wordCount < 2 && !explicitInterrupt) return;
 
         bargeInTriggeredRef.current = true;
         guidanceRequestRef.current += 1;
