@@ -38,6 +38,9 @@ export default function LessonPlayerScreen({
   const currentTutorSpeechRef = useRef('');
   const bargeInTriggeredRef = useRef(false);
   const tutorPlaybackStartedAtRef = useRef(0);
+  const listeningSeedRef = useRef('');
+  const awaitingBargeSpeechRef = useRef(false);
+  const bargeNoSpeechTimerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
@@ -90,6 +93,10 @@ export default function LessonPlayerScreen({
       clearTimeout(recognitionRestartTimerRef.current);
       recognitionRestartTimerRef.current = null;
     }
+    if (bargeNoSpeechTimerRef.current) {
+      clearTimeout(bargeNoSpeechTimerRef.current);
+      bargeNoSpeechTimerRef.current = null;
+    }
     accumulatedTranscriptRef.current = '';
 
     if (audioPlayerRef.current) {
@@ -104,7 +111,7 @@ export default function LessonPlayerScreen({
   }, []);
 
   // Step 2 & 6: Automated Hands-Free Voice Listener Loop with 1.8s Speech Pause Buffer (VAD Debounce)
-  const startContinuousListening = useCallback(() => {
+  const startContinuousListening = useCallback((initialTranscript = '') => {
     if (!isMountedRef.current || isVoicePausedRef.current || isProcessingRef.current) {
       return;
     }
@@ -117,7 +124,20 @@ export default function LessonPlayerScreen({
       clearTimeout(recognitionRestartTimerRef.current);
       recognitionRestartTimerRef.current = null;
     }
-    accumulatedTranscriptRef.current = '';
+    listeningSeedRef.current = initialTranscript.trim();
+    accumulatedTranscriptRef.current = listeningSeedRef.current;
+
+    const finalizeAfterPause = () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = setTimeout(() => {
+        const finalSpoken = accumulatedTranscriptRef.current.trim();
+        if (finalSpoken && isMountedRef.current && !isVoicePausedRef.current && !isProcessingRef.current) {
+          listeningSeedRef.current = '';
+          stopAllAudioAndMic();
+          handleStudentVoiceInput(finalSpoken);
+        }
+      }, 1800);
+    };
 
     updateVoiceStatus('listening');
     setMicActive(true);
@@ -129,25 +149,27 @@ export default function LessonPlayerScreen({
         if (!isMountedRef.current || isVoicePausedRef.current) return;
         updateVoiceStatus('listening');
         setMicActive(true);
+        if (listeningSeedRef.current) finalizeAfterPause();
+        if (awaitingBargeSpeechRef.current && !listeningSeedRef.current) {
+          bargeNoSpeechTimerRef.current = setTimeout(() => {
+            if (!accumulatedTranscriptRef.current.trim() && isMountedRef.current && !isProcessingRef.current) {
+              awaitingBargeSpeechRef.current = false;
+              playTutorVoice("Did you want to say something? I'm listening.");
+            }
+          }, 3500);
+        }
       },
       onResult: (transcript) => {
         if (!isMountedRef.current || isVoicePausedRef.current || isProcessingRef.current) return;
         if (transcript && transcript.trim()) {
-          accumulatedTranscriptRef.current = transcript.trim();
-
-          // Reset silence timer: user is speaking or taking a natural breath
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current);
+          awaitingBargeSpeechRef.current = false;
+          if (bargeNoSpeechTimerRef.current) {
+            clearTimeout(bargeNoSpeechTimerRef.current);
+            bargeNoSpeechTimerRef.current = null;
           }
-
-          // VAD Speech Pause Buffer: wait for 1.8 seconds of true silence before finalizing
-          silenceTimerRef.current = setTimeout(() => {
-            const finalSpoken = accumulatedTranscriptRef.current.trim();
-            if (finalSpoken && isMountedRef.current && !isVoicePausedRef.current && !isProcessingRef.current) {
-              stopAllAudioAndMic();
-              handleStudentVoiceInput(finalSpoken);
-            }
-          }, 1800);
+          accumulatedTranscriptRef.current = [listeningSeedRef.current, transcript.trim()].filter(Boolean).join(' ');
+          // Wait through natural pauses so a child's full thought is captured.
+          finalizeAfterPause();
         }
       },
       onError: (err) => {
@@ -191,45 +213,31 @@ export default function LessonPlayerScreen({
       onStart: () => setMicActive(true),
       onResult: (transcript, meta = {}) => {
         if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
-        // Interim hypotheses frequently contain fragments coming from the
-        // teacher's speakers. Never pause playback until recognition finalizes.
-        if (!meta.latestIsFinal) return;
         if (Date.now() - tutorPlaybackStartedAtRef.current < 1200) return;
         const spoken = (meta.latestTranscript || transcript).trim();
         if (!spoken || looksLikeTeacherEcho(spoken)) return;
 
         const wordCount = spoken.split(/\s+/).filter(Boolean).length;
-        // A one-word result is too easily caused by room noise or TTS leakage.
-        // Explicit interruption words remain available for natural short barge-in.
-        const explicitInterrupt = /^(stop|wait|pause|sorry|repeat|again|what|why|how|hello|miss|missed)$/i.test(spoken);
+        const interruptMatch = spoken.match(/^(stop|wait|pause|sorry|excuse me|ms ade)\b[,.! ]*(.*)$/i);
+        const explicitInterrupt = Boolean(interruptMatch);
+        // Explicit barge-in words pause immediately even while recognition is
+        // interim. Other speech must first be finalized to avoid speaker echo.
+        if (!explicitInterrupt && !meta.latestIsFinal) return;
         if (wordCount < 2 && !explicitInterrupt) return;
 
-        accumulatedTranscriptRef.current = spoken;
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        silenceTimerRef.current = setTimeout(() => {
-          if (bargeInTriggeredRef.current || !isMountedRef.current) return;
-          const finalSpoken = accumulatedTranscriptRef.current.trim();
-          if (!finalSpoken || looksLikeTeacherEcho(finalSpoken)) return;
+        bargeInTriggeredRef.current = true;
+        guidanceRequestRef.current += 1;
+        speechService.cancelAllSpeech();
+        speechService.stopListening();
+        setMicActive(false);
+        isProcessingRef.current = false;
+        updateVoiceStatus('listening');
 
-          bargeInTriggeredRef.current = true;
-          guidanceRequestRef.current += 1;
-          speechService.cancelAllSpeech();
-          speechService.stopListening();
-          setMicActive(false);
-          isProcessingRef.current = false;
-
-          // Browser recognition sometimes reports confidence as zero when it is
-          // unavailable. Only classify a result as unclear when a real, low
-          // confidence score accompanies a very short utterance.
-          const uncertain = meta.confidence > 0 && meta.confidence < 0.45 && finalSpoken.split(/\s+/).length < 3;
-          if (uncertain) {
-            // Do not submit uncertain audio as an academic attempt. The current
-            // phase and delivery token remain unchanged while Ms. Ade confirms.
-            playTutorVoice("Did you say something? I didn't quite hear you. Please say it again.");
-          } else {
-            triggerGuidance(finalSpoken);
-          }
-        }, 500);
+        // "Wait" is a floor-taking signal, not the student's complete answer.
+        // Preserve only words spoken after it, then wait for the full utterance.
+        const wordsAfterInterrupt = explicitInterrupt ? (interruptMatch?.[2] || '').trim() : spoken;
+        awaitingBargeSpeechRef.current = !wordsAfterInterrupt;
+        startContinuousListening(wordsAfterInterrupt);
       },
       onError: () => {},
       onEnd: () => {
@@ -239,7 +247,7 @@ export default function LessonPlayerScreen({
         }
       }
     });
-  }, [looksLikeTeacherEcho]);
+  }, [looksLikeTeacherEcho, startContinuousListening, updateVoiceStatus]);
 
   // Play audio safely using authoritative single audio controller
   const playTutorVoice = useCallback(async (textToSpeak, afterCurrentPlayback = null) => {
