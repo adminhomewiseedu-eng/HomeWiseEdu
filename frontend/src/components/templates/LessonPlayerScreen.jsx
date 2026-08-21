@@ -34,11 +34,31 @@ export default function LessonPlayerScreen({
   const activeLessonRef = useRef(null);
   const guidanceRequestRef = useRef(0);
   const mountCycleRef = useRef(0);
+  const voiceStatusRef = useRef('thinking');
+  const currentTutorSpeechRef = useRef('');
+  const bargeInTriggeredRef = useRef(false);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
   const childLevel = child?.level !== undefined ? child.level : 0;
   const levelLabel = child?.level_label || getLevelLabel(childLevel, eduSys);
+
+  const updateVoiceStatus = useCallback((status) => {
+    voiceStatusRef.current = status;
+    setVoiceStatus(status);
+  }, []);
+
+  const normalizedWords = (text) => new Set(
+    String(text || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter((word) => word.length > 2)
+  );
+
+  const looksLikeTeacherEcho = useCallback((transcript) => {
+    const heard = [...normalizedWords(transcript)];
+    if (!heard.length) return true;
+    const teacher = normalizedWords(currentTutorSpeechRef.current);
+    const overlap = heard.filter((word) => teacher.has(word)).length / heard.length;
+    return overlap >= 0.75;
+  }, []);
 
   // Ensure Web Audio context is initialized/resumed on user gesture
   const ensureAudioContext = useCallback(() => {
@@ -93,7 +113,7 @@ export default function LessonPlayerScreen({
     }
     accumulatedTranscriptRef.current = '';
 
-    setVoiceStatus('listening');
+    updateVoiceStatus('listening');
     setMicActive(true);
 
     speechService.startListening({
@@ -101,7 +121,7 @@ export default function LessonPlayerScreen({
       interimResults: true,
       onStart: () => {
         if (!isMountedRef.current || isVoicePausedRef.current) return;
-        setVoiceStatus('listening');
+        updateVoiceStatus('listening');
         setMicActive(true);
       },
       onResult: (transcript) => {
@@ -151,14 +171,68 @@ export default function LessonPlayerScreen({
         }
       }
     });
-  }, [stopAllAudioAndMic]);
+  }, [stopAllAudioAndMic, updateVoiceStatus]);
+
+  // Keep recognition open during teacher playback so clear student speech can
+  // interrupt naturally. Echo-like transcripts are ignored so Ms. Ade does not
+  // interrupt herself through the speakers.
+  const startBargeInListening = useCallback(() => {
+    if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
+
+    speechService.startListening({
+      continuous: true,
+      interimResults: true,
+      onStart: () => setMicActive(true),
+      onResult: (transcript, meta = {}) => {
+        if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
+        const spoken = (meta.latestTranscript || transcript).trim();
+        if (!spoken || looksLikeTeacherEcho(spoken)) return;
+
+        accumulatedTranscriptRef.current = spoken;
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = setTimeout(() => {
+          if (bargeInTriggeredRef.current || !isMountedRef.current) return;
+          const finalSpoken = accumulatedTranscriptRef.current.trim();
+          if (!finalSpoken || looksLikeTeacherEcho(finalSpoken)) return;
+
+          bargeInTriggeredRef.current = true;
+          guidanceRequestRef.current += 1;
+          speechService.cancelAllSpeech();
+          speechService.stopListening();
+          setMicActive(false);
+          isProcessingRef.current = false;
+
+          // Browser recognition sometimes reports confidence as zero when it is
+          // unavailable. Only classify a result as unclear when a real, low
+          // confidence score accompanies a very short utterance.
+          const uncertain = meta.confidence > 0 && meta.confidence < 0.45 && finalSpoken.split(/\s+/).length < 3;
+          if (uncertain) {
+            // Do not submit uncertain audio as an academic attempt. The current
+            // phase and delivery token remain unchanged while Ms. Ade confirms.
+            playTutorVoice("Did you say something? I didn't quite hear you. Please say it again.");
+          } else {
+            triggerGuidance(finalSpoken);
+          }
+        }, meta.isFinal ? 450 : 900);
+      },
+      onError: () => {},
+      onEnd: () => {
+        setMicActive(false);
+        if (isMountedRef.current && voiceStatusRef.current === 'speaking' && !bargeInTriggeredRef.current) {
+          recognitionRestartTimerRef.current = setTimeout(startBargeInListening, 250);
+        }
+      }
+    });
+  }, [looksLikeTeacherEcho]);
 
   // Play audio safely using authoritative single audio controller
   const playTutorVoice = useCallback(async (textToSpeak, afterCurrentPlayback = null) => {
     if (!textToSpeak || !isMountedRef.current) return;
 
     stopAllAudioAndMic();
-    setVoiceStatus('speaking');
+    bargeInTriggeredRef.current = false;
+    currentTutorSpeechRef.current = textToSpeak;
+    updateVoiceStatus('speaking');
     setLastSpokenText(textToSpeak);
 
     const onPlaybackComplete = () => {
@@ -172,11 +246,14 @@ export default function LessonPlayerScreen({
     await speechService.playAuthoritativeAudio(
       textToSpeak,
       () => {
-        if (isMountedRef.current) setVoiceStatus('speaking');
+        if (isMountedRef.current) {
+          updateVoiceStatus('speaking');
+          startBargeInListening();
+        }
       },
       onPlaybackComplete
     );
-  }, [stopAllAudioAndMic, startContinuousListening]);
+  }, [stopAllAudioAndMic, startContinuousListening, startBargeInListening, updateVoiceStatus]);
 
   // Request next spoken guidance turn from backend AI Tutor (Ms. Ade)
   const triggerGuidance = useCallback(async (
@@ -191,7 +268,7 @@ export default function LessonPlayerScreen({
     stopAllAudioAndMic();
     isProcessingRef.current = true;
     const requestId = ++guidanceRequestRef.current;
-    setVoiceStatus('thinking');
+    updateVoiceStatus('thinking');
 
     try {
       const currentHistory = historyRef.current;
@@ -245,10 +322,10 @@ export default function LessonPlayerScreen({
     } catch (e) {
       console.error('Tutor guidance voice error:', e);
       isProcessingRef.current = false;
-      setVoiceStatus('listening');
+      updateVoiceStatus('listening');
       startContinuousListening();
     }
-  }, [child, dayNumber, ensureAudioContext, stopAllAudioAndMic, playTutorVoice, startContinuousListening]);
+  }, [child, dayNumber, ensureAudioContext, stopAllAudioAndMic, playTutorVoice, startContinuousListening, updateVoiceStatus]);
 
   // Student spoken input received from microphone
   const handleStudentVoiceInput = (transcript) => {
@@ -279,7 +356,7 @@ export default function LessonPlayerScreen({
       // Pause
       isVoicePausedRef.current = true;
       setIsVoicePaused(true);
-      setVoiceStatus('paused');
+      updateVoiceStatus('paused');
       stopAllAudioAndMic();
     }
   };
@@ -308,7 +385,7 @@ export default function LessonPlayerScreen({
 
           if (resume.mode !== 'new') {
             if (resume.mode === 'complete') {
-              setVoiceStatus('paused');
+              updateVoiceStatus('paused');
               return;
             }
             if (resume.mode === 'active_question') {
@@ -418,7 +495,7 @@ export default function LessonPlayerScreen({
               {voiceStatus === 'speaking' && (
                 <span className="status-badge speaking">
                   <span className="live-wave"><i></i><i></i><i></i><i></i></span>
-                  Ms. Ade is speaking to you…
+                  Ms. Ade is speaking · microphone open for interruption…
                 </span>
               )}
               {voiceStatus === 'listening' && (
@@ -446,9 +523,9 @@ export default function LessonPlayerScreen({
             <button
               className="voice-action-btn interrupt-btn"
               onClick={handleManualInterrupt}
-              title="Click to interrupt and speak"
+              title="Optional backup if hands-free interruption is not detected"
             >
-              🎤 Interrupt & Speak
+              🎤 Tap if needed
             </button>
           )}
 

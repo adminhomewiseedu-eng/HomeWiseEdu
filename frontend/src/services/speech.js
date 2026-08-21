@@ -232,10 +232,16 @@ export class SpeechService {
 
       this.recognition.onresult = (event) => {
         let fullTranscript = '';
+        let latestTranscript = '';
+        let confidence = 0;
+        let isFinal = false;
         for (let i = 0; i < event.results.length; i++) {
           fullTranscript += event.results[i][0].transcript + ' ';
+          if (i >= event.resultIndex) latestTranscript += event.results[i][0].transcript + ' ';
+          confidence = Math.max(confidence, event.results[i][0].confidence || 0);
+          isFinal = isFinal || event.results[i].isFinal;
         }
-        if (onResult) onResult(fullTranscript.trim());
+        if (onResult) onResult(fullTranscript.trim(), { confidence, isFinal, latestTranscript: latestTranscript.trim() });
       };
 
       this.recognition.onerror = (event) => {
