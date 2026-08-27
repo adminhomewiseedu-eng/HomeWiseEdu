@@ -1,11 +1,14 @@
 import React from 'react';
 import ProgressBar from '../atoms/ProgressBar';
+import ChildAvatar from '../atoms/ChildAvatar';
 
 export default function KidCard({
   name,
   grade,
   age,
   avatar = '🦁',
+  childId,
+  profileImageUrl,
   avatarBg = '#DBEAFE',
   progressPercentage = 50,
   progressGradient = 'linear-gradient(90deg, var(--teal), var(--sky))',
@@ -15,13 +18,13 @@ export default function KidCard({
   lessonsCount = 0,
   certsCount = 0,
   onClick,
+  onEdit,
 }) {
   return (
     <div className="card kid-card" onClick={onClick}>
+      {onEdit && <button className="btn btn-ghost btn-sm" style={{ float: 'right', padding: '5px 9px' }} onClick={(event) => { event.stopPropagation(); onEdit(); }}>Edit</button>}
       <div className="kid-top">
-        <div className="kid-av" style={{ background: avatarBg }}>
-          {avatar}
-        </div>
+        <ChildAvatar className="kid-av" style={{ background: avatarBg }} childId={childId} profileImageUrl={profileImageUrl} fallback={avatar} />
         <div>
           <h3>{name}</h3>
           <div className="grade">{grade} · Age {age}</div>

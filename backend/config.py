@@ -49,6 +49,7 @@ class Settings(BaseModel):
     AUTO_INIT_DB: bool = os.getenv("AUTO_INIT_DB", "true").lower() in {"1", "true", "yes"}
     SEED_MODE: str = os.getenv("SEED_MODE", "demo")
     MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+    MAX_PROFILE_IMAGE_BYTES: int = int(os.getenv("MAX_PROFILE_IMAGE_BYTES", str(5 * 1024 * 1024)))
     DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
     DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     STORAGE_ROOT: str = os.getenv("STORAGE_ROOT", "")
@@ -78,6 +79,10 @@ class Settings(BaseModel):
     @property
     def AUDIO_DIR(self) -> str:
         return self.TTS_CACHE_DIR
+
+    @property
+    def PROFILE_IMAGE_DIR(self) -> str:
+        return str(Path(self.STORAGE_ROOT or Path(__file__).resolve().parent / "uploads") / "profiles")
 
     @property
     def allowed_origins_list(self) -> List[str]:
@@ -119,5 +124,5 @@ if not settings.SECRET_KEY:
     # Production already fails closed above when SECRET_KEY is missing.
     settings.SECRET_KEY = "homewiseedu-local-development-only-secret-key"
 
-for directory in (settings.EVIDENCE_DIR, settings.REPORTS_DIR, settings.TTS_CACHE_DIR):
+for directory in (settings.EVIDENCE_DIR, settings.REPORTS_DIR, settings.PROFILE_IMAGE_DIR, settings.TTS_CACHE_DIR):
     Path(directory).mkdir(parents=True, exist_ok=True)

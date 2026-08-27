@@ -43,7 +43,10 @@ def authorize_child(db: Session, current_user: User, child_id: int) -> Child:
     child = db.query(Child).filter(Child.id == child_id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
-    if current_user.role != "admin" and child.parent_id != current_user.id:
+    if current_user.role == "student":
+        if child.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized for this child")
+    elif current_user.role != "admin" and child.parent_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized for this child")
     return child
 
@@ -101,6 +104,9 @@ def login(creds: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token({"sub": user.email, "id": user.id, "role": user.role})
+    child = db.query(Child).filter(Child.user_id == user.id).first() if user.role == "student" else None
+    if user.role == "student" and not child:
+        raise HTTPException(status_code=403, detail="Student profile is not available")
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -109,7 +115,9 @@ def login(creds: UserLogin, db: Session = Depends(get_db)):
             "name": user.name,
             "email": user.email,
             "role": user.role,
-            "avatar": user.avatar
+            "avatar": child.avatar if child else user.avatar,
+            "child_id": child.id if child else None,
+            "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child and child.profile_image_name else None,
         }
     }
 
@@ -152,8 +160,30 @@ def add_child(
             )
         subject_ids = [subject.id for subject in subjects]
 
+    student_email = (child_in.student_email or "").strip().lower()
+    student_password = child_in.student_password or ""
+    if bool(student_email) != bool(student_password):
+        raise HTTPException(status_code=400, detail="Student email and password must be provided together")
+    if student_email and ("@" not in student_email or len(student_password) < 8):
+        raise HTTPException(status_code=400, detail="Use a valid student email and a password of at least 8 characters")
+    if student_email and db.query(User).filter(User.email == student_email).first():
+        raise HTTPException(status_code=400, detail="Student email is already registered")
+
+    student_user = None
+    if student_email:
+        student_user = User(
+            email=student_email,
+            name=child_in.name,
+            password_hash=get_password_hash(student_password),
+            role="student",
+            avatar=child_in.avatar or "🦁",
+        )
+        db.add(student_user)
+        db.flush()
+
     child = Child(
         parent_id=pid,
+        user_id=student_user.id if student_user else None,
         name=child_in.name,
         age=child_in.age,
         date_of_birth=child_in.date_of_birth,
@@ -166,8 +196,7 @@ def add_child(
         active=True
     )
     db.add(child)
-    db.commit()
-    db.refresh(child)
+    db.flush()
 
     # Enroll in the validated selected/default subjects.
     for sid in subject_ids:
@@ -190,6 +219,8 @@ def add_child(
         level_label=lvl_label,
         grade=child.grade,
         avatar=child.avatar,
+        profile_image_url=None,
+        student_email=student_user.email if student_user else None,
         xp=child.xp,
         streak_days=child.streak_days,
         enrolled_subjects=[

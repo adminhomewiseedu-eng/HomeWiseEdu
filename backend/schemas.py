@@ -38,6 +38,21 @@ class ChildCreate(BaseModel):
     level: int = 0 # Neutral level 0-13 (0 = UK Reception / US Kindergarten)
     subject_ids: Optional[List[int]] = []
     avatar: str = "🦁"
+    student_email: Optional[str] = None
+    student_password: Optional[str] = None
+
+class ChildUpdate(BaseModel):
+    name: Optional[str] = None
+    age: Optional[int] = None
+    date_of_birth: Optional[str] = None
+    education_system: Optional[str] = None
+    level: Optional[int] = None
+    avatar: Optional[str] = None
+    subject_ids: Optional[List[int]] = None
+
+class StudentCredentialsUpdate(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
 
 class ChildSubjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -57,6 +72,8 @@ class ChildOut(BaseModel):
     level_label: Optional[str] = None
     grade: Optional[str] = None
     avatar: str
+    profile_image_url: Optional[str] = None
+    student_email: Optional[str] = None
     xp: int
     streak_days: int
     enrolled_subjects: Optional[List[ChildSubjectOut]] = []

@@ -65,7 +65,10 @@ def list_students(db: Session = Depends(get_db), current_user: User = Depends(re
         session = db.query(LessonSession).filter(LessonSession.child_id == child.id).order_by(LessonSession.last_active_at.desc()).first()
         current = session.lesson.title if session and session.lesson else None
         result.append({
-            "id": child.id, "name": child.name, "avatar": child.avatar, "parent": child.parent.name if child.parent else None,
+            "id": child.id, "name": child.name, "avatar": child.avatar,
+            "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child.profile_image_name else None,
+            "student_email": child.login_user.email if child.login_user else None,
+            "parent": child.parent.name if child.parent else None,
             "level": child.level, "level_label": get_level_label(child.level, child.education_system),
             "education_system": child.education_system, "subjects": subjects,
             "overall_progress": round((len(completed) / len(progress)) * 100) if progress else 0,
@@ -86,7 +89,10 @@ def student_detail(child_id: int, db: Session = Depends(get_db), current_user: U
     evidence = db.query(LearningEvidence).filter(LearningEvidence.child_id == child.id).order_by(LearningEvidence.created_at.desc()).all()
     sessions = db.query(LessonSession).filter(LessonSession.child_id == child.id).order_by(LessonSession.last_active_at.desc()).limit(20).all()
     return {
-        "student": {"id": child.id, "name": child.name, "avatar": child.avatar, "age": child.age, "active": child.active,
+        "student": {"id": child.id, "name": child.name, "avatar": child.avatar,
+                    "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child.profile_image_name else None,
+                    "student_email": child.login_user.email if child.login_user else None,
+                    "age": child.age, "active": child.active,
                     "parent": child.parent.name if child.parent else None, "parent_email": child.parent.email if child.parent else None,
                     "level": child.level, "level_label": get_level_label(child.level, child.education_system),
                     "education_system": child.education_system, "subjects": [e.subject.title for e in enrollments if e.subject]},

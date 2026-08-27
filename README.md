@@ -121,6 +121,8 @@ npm run build
 
 Public signup creates parent accounts only; it cannot create administrators. Admin access must be provisioned deliberately by an authorised operator.
 
+Parents can optionally enable a separate student login while creating or editing a child. Student accounts open only their linked student dashboard, while the owning parent retains access and can reset the student's credentials. Passwords are stored only as hashes and are never returned by the API.
+
 The admin curriculum workflow is:
 
 1. Sign in with an authorised admin account.
@@ -150,7 +152,7 @@ Production requires:
 - a random `SECRET_KEY` of at least 32 characters
 - OpenAI and ElevenLabs credentials
 - an HTTPS-only `ALLOWED_ORIGINS` value
-- durable `STORAGE_ROOT` for evidence and reports
+- durable `STORAGE_ROOT` for evidence, reports and child profile pictures
 - `VITE_API_URL` configured at frontend build time
 - `ENVIRONMENT=production`, `AUTO_INIT_DB=false` and `SEED_MODE=none`
 

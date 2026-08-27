@@ -46,6 +46,8 @@ export const authAPI = {
         level: childData.level !== undefined ? Number(childData.level) : 0,
         subject_ids: childData.subject_ids || [],
         avatar: childData.avatar || '🦁',
+        student_email: childData.student_email || null,
+        student_password: childData.student_password || null,
       };
     } else {
       pid = maybeParentId || null;
@@ -126,6 +128,15 @@ export const evidenceAPI = {
 
 export const parentAPI = {
   getDashboard: (parentId = 1) => api.get(`/api/parent/dashboard/${parentId}`),
+  updateChild: (childId, payload) => api.patch(`/api/parent/children/${childId}`, payload),
+  updateStudentCredentials: (childId, payload) => api.put(`/api/parent/children/${childId}/credentials`, payload),
+  uploadProfileImage: (childId, image) => {
+    const form = new FormData();
+    form.append('image', image);
+    return api.post(`/api/parent/children/${childId}/profile-image`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  removeProfileImage: (childId) => api.delete(`/api/parent/children/${childId}/profile-image`),
+  getProfileImage: (childId) => api.get(`/api/parent/children/${childId}/profile-image`, { responseType: 'blob' }),
   handleRecommendation: (recId, action) =>
     api.post(`/api/parent/recommendations/${recId}/action`, { action }),
 };

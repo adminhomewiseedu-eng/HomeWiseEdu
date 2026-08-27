@@ -41,6 +41,13 @@ def ensure_db_schema():
             conn.execute(text("ALTER TABLE lesson_days ADD COLUMN origin_of_knowledge TEXT"))
         if day_columns and "video_url" not in day_columns:
             conn.execute(text("ALTER TABLE lesson_days ADD COLUMN video_url TEXT"))
+        child_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(children)"))]
+        if child_columns and "user_id" not in child_columns:
+            conn.execute(text("ALTER TABLE children ADD COLUMN user_id INTEGER"))
+        if child_columns and "profile_image_name" not in child_columns:
+            conn.execute(text("ALTER TABLE children ADD COLUMN profile_image_name VARCHAR"))
+        if child_columns:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_children_user_id ON children(user_id)"))
         for table, index_name in (("lesson_sessions", "uq_lesson_session_child_lesson_day"), ("student_progress", "uq_student_progress_child_lesson_day")):
             duplicates = conn.execute(text(
                 f"SELECT COUNT(*) FROM (SELECT child_id, lesson_id, day_number FROM {table} "

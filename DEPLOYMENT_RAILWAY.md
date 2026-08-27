@@ -21,9 +21,10 @@ This is a deployment runbook, not an authorization to deploy. The immediate MVP 
 | Backend config | `OPENAI_MODEL` | Approved OpenAI chat/evaluation model |
 | Backend config | `ELEVENLABS_VOICE_ID` | Authoritative Ms. Ade voice ID |
 | Backend config | `ALLOWED_ORIGINS` | Comma-separated public HTTPS frontend origins |
-| Backend config | `STORAGE_ROOT=/data/homewiseedu` | Durable evidence/report root on the volume |
+| Backend config | `STORAGE_ROOT=/data/homewiseedu` | Durable evidence, report and student-profile-image root on the volume |
 | Backend config | `TTS_CACHE_DIR=/tmp/homewiseedu/tts` | Disposable, regenerable TTS cache |
 | Backend config | `MAX_UPLOAD_BYTES` | Optional override; default 26214400 |
+| Backend config | `MAX_PROFILE_IMAGE_BYTES` | Optional student profile image limit; default 5242880 |
 | Backend config | `DB_POOL_SIZE`, `DB_MAX_OVERFLOW` | Optional conservative pool overrides (5/10 defaults) |
 | Backend config | `AUTO_INIT_DB=false` | Explicit defense in depth; production already disables it |
 | Backend config | `SEED_MODE=none` | Production must not create demo users |
@@ -56,6 +57,7 @@ Real curriculum is uploaded by an authenticated admin to `POST /api/curriculum/i
 
 - `STORAGE_ROOT/evidence`: durable student uploads; included in volume backups and the product retention/deletion policy.
 - `STORAGE_ROOT/reports`: reserved durable path for report/certificate files if that feature is later implemented.
+- `STORAGE_ROOT/profiles`: durable child profile pictures; include it in volume backups and the same deletion/retention policy as child records.
 - `TTS_CACHE_DIR`: disposable audio cache; safe to clear because speech can be regenerated.
 - atomic temporary cache/upload files: disposable and removed after replacement/failure.
 

@@ -14,7 +14,8 @@ class User(Base):
     avatar = Column(String, default="S")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    children = relationship("Child", back_populates="parent", cascade="all, delete-orphan")
+    children = relationship("Child", back_populates="parent", cascade="all, delete-orphan", foreign_keys="Child.parent_id")
+    student_child = relationship("Child", back_populates="login_user", uselist=False, foreign_keys="Child.user_id")
     alerts = relationship("ParentAlert", back_populates="parent", cascade="all, delete-orphan")
     recommendations = relationship("AIRecommendation", back_populates="parent", cascade="all, delete-orphan")
 
@@ -24,6 +25,7 @@ class Child(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     parent_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True, index=True)
     name = Column(String, nullable=False)
     age = Column(Integer, default=9)
     date_of_birth = Column(String, nullable=True) # e.g. "2015-04-12"
@@ -31,6 +33,7 @@ class Child(Base):
     level = Column(Integer, default=4, nullable=False) # Canonical Level 0 -> 13
     grade = Column(String, default="Year 4") # legacy/display cached grade
     avatar = Column(String, default="🦁")
+    profile_image_name = Column(String, nullable=True)
     xp = Column(Integer, default=0)
     streak_days = Column(Integer, default=1)
     active = Column(Boolean, default=True)
@@ -38,7 +41,8 @@ class Child(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
-    parent = relationship("User", back_populates="children")
+    parent = relationship("User", back_populates="children", foreign_keys=[parent_id])
+    login_user = relationship("User", back_populates="student_child", foreign_keys=[user_id])
     enrolled_subjects = relationship("ChildSubject", back_populates="child", cascade="all, delete-orphan")
     progress_records = relationship("StudentProgress", back_populates="child", cascade="all, delete-orphan")
     evidence_records = relationship("LearningEvidence", back_populates="child", cascade="all, delete-orphan")

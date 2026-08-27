@@ -1,8 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useState } from 'react';
 import KidCard from '../molecules/KidCard';
 import ParentLeftCol from '../molecules/ParentLeftCol';
 import ParentRightCol from '../molecules/ParentRightCol';
 import { useParentDashboard } from '../../hooks/useParentDashboard';
+import EditChildModal from '../organisms/EditChildModal';
 
 const CHILD_COLORS = [
   { bg: '#DBEAFE', gradient: 'linear-gradient(90deg, var(--teal), var(--sky))' },
@@ -13,6 +14,7 @@ const CHILD_COLORS = [
 
 export default function ParentDashboardScreen({ parentId, onSelectChild, onAddChild, onViewPortfolio }) {
   const { data, loading, error, recStates, handleRecommendation, refetch } = useParentDashboard(parentId);
+  const [editingChild, setEditingChild] = useState(null);
 
   if (loading) {
     return <div className="wrap pad" style={{ textAlign: 'center', padding: '100px 0' }}><h2>Loading dashboard...</h2></div>;
@@ -48,6 +50,8 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
                 grade={c.grade}
                 age={c.age}
                 avatar={c.avatar}
+                childId={c.id}
+                profileImageUrl={c.profile_image_url}
                 avatarBg={colors.bg}
                 progressPercentage={c.progress_percentage}
                 progressGradient={colors.gradient}
@@ -57,6 +61,7 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
                 lessonsCount={c.completed_lessons}
                 certsCount={c.certificates_count}
                 onClick={() => onSelectChild(c)}
+                onEdit={() => setEditingChild(c)}
               />
             );
           })}
@@ -75,6 +80,7 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
           <ParentRightCol alerts={alerts} recommendations={recommendations} recStates={recStates} onRecommendationAction={handleRecommendation} />
         </div>
       )}
+      {editingChild && <EditChildModal child={editingChild} onClose={() => setEditingChild(null)} onSaved={refetch} />}
     </div>
   );
 }

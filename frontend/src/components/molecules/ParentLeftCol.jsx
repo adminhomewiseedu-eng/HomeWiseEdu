@@ -12,6 +12,8 @@ export default function ParentLeftCol({ childrenList = [], weeklySummary, recent
           <SubjectProgressRow
             key={c.id}
             icon={c.avatar}
+            childId={c.id}
+            profileImageUrl={c.profile_image_url}
             iconBg={idx % 2 === 0 ? '#DBEAFE' : '#FEF3C7'}
             name={c.name}
             percentage={c.progress_percentage}

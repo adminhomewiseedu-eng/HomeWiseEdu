@@ -192,6 +192,8 @@ def get_student_dashboard(
     return {
         "id": child.id,
         "name": child.name,
+        "avatar": child.avatar,
+        "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child.profile_image_name else None,
         "level": student_level,
         "level_label": level_label,
         "education_system": edu_sys,

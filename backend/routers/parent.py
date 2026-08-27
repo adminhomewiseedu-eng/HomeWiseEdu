@@ -1,14 +1,36 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 from ..database import get_db
-from ..models import User, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject
-from ..schemas import RecommendationAction
+from ..models import User, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject, Subject
+from ..schemas import RecommendationAction, ChildUpdate, StudentCredentialsUpdate
+from ..config import settings
+from ..services.storage_service import save_profile_image, delete_profile_image
 from ..utils.levels import get_level_label
-from .auth import get_current_user
+from .auth import get_current_user, authorize_child, get_password_hash
 from typing import Optional
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
+
+
+def _parent_owned_child(db: Session, current_user: User, child_id: int) -> Child:
+    if current_user.role not in {"parent", "admin"}:
+        raise HTTPException(status_code=403, detail="Parent access required")
+    child = authorize_child(db, current_user, child_id)
+    return child
+
+
+def _child_payload(child: Child) -> dict:
+    return {
+        "id": child.id, "parent_id": child.parent_id, "name": child.name, "age": child.age,
+        "date_of_birth": child.date_of_birth, "education_system": child.education_system,
+        "level": child.level, "grade": get_level_label(child.level, child.education_system),
+        "avatar": child.avatar, "xp": child.xp, "streak_days": child.streak_days,
+        "student_email": child.login_user.email if child.login_user else None,
+        "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child.profile_image_name else None,
+    }
 
 @router.get("/dashboard/{parent_id}")
 def get_parent_dashboard(
@@ -65,6 +87,8 @@ def get_parent_dashboard(
             "level_label": level_label,
             "grade": level_label,
             "avatar": c.avatar,
+            "profile_image_url": f"/api/parent/children/{c.id}/profile-image" if c.profile_image_name else None,
+            "student_email": c.login_user.email if c.login_user else None,
             "xp": c.xp,
             "streak_days": c.streak_days,
             "completed_lessons": completed,
@@ -93,6 +117,117 @@ def get_parent_dashboard(
         "recommendations": recommendations,
         "recent_evidence": recent_evidence
     }
+
+
+@router.patch("/children/{child_id}")
+def update_child(
+    child_id: int,
+    changes: ChildUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    child = _parent_owned_child(db, current_user, child_id)
+    values = changes.model_dump(exclude_unset=True)
+    subject_ids = values.pop("subject_ids", None)
+    for field in ("name", "age", "date_of_birth", "education_system", "avatar"):
+        if field in values and values[field] is not None:
+            setattr(child, field, values[field])
+    if "level" in values and values["level"] is not None:
+        child.level = max(0, min(13, int(values["level"])))
+    child.grade = get_level_label(child.level, child.education_system)
+    if child.login_user:
+        child.login_user.name = child.name
+        child.login_user.avatar = child.avatar
+    if subject_ids is not None:
+        valid = db.query(Subject).filter(Subject.id.in_(subject_ids)).all() if subject_ids else []
+        if len(valid) != len(set(subject_ids)):
+            raise HTTPException(status_code=400, detail="One or more selected subjects are invalid")
+        db.query(ChildSubject).filter(ChildSubject.child_id == child.id).delete(synchronize_session=False)
+        for subject in valid:
+            db.add(ChildSubject(child_id=child.id, subject_id=subject.id))
+    db.commit()
+    db.refresh(child)
+    return _child_payload(child)
+
+
+@router.put("/children/{child_id}/credentials")
+def update_student_credentials(
+    child_id: int,
+    changes: StudentCredentialsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    child = _parent_owned_child(db, current_user, child_id)
+    email = (changes.email or "").strip().lower()
+    password = changes.password or ""
+    if not child.login_user and (not email or not password):
+        raise HTTPException(status_code=400, detail="Email and password are required to enable student login")
+    if email and "@" not in email:
+        raise HTTPException(status_code=400, detail="Enter a valid student email")
+    if password and len(password) < 8:
+        raise HTTPException(status_code=400, detail="Student password must be at least 8 characters")
+    account = child.login_user
+    if email and db.query(User).filter(User.email == email, User.id != (account.id if account else -1)).first():
+        raise HTTPException(status_code=400, detail="Student email is already registered")
+    if not account:
+        account = User(email=email, name=child.name, role="student", avatar=child.avatar,
+                       password_hash=get_password_hash(password))
+        db.add(account)
+        db.flush()
+        child.user_id = account.id
+    else:
+        if email and email != account.email:
+            account.email = email
+        if password:
+            account.password_hash = get_password_hash(password)
+    db.commit()
+    return {"student_email": account.email, "login_enabled": True}
+
+
+@router.post("/children/{child_id}/profile-image")
+async def upload_child_profile_image(
+    child_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    child = _parent_owned_child(db, current_user, child_id)
+    old_name = child.profile_image_name
+    new_name = await save_profile_image(image)
+    child.profile_image_name = new_name
+    db.commit()
+    delete_profile_image(old_name)
+    return {"profile_image_url": f"/api/parent/children/{child.id}/profile-image"}
+
+
+@router.get("/children/{child_id}/profile-image")
+def get_child_profile_image(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    child = authorize_child(db, current_user, child_id)
+    if not child.profile_image_name:
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    root = Path(settings.PROFILE_IMAGE_DIR).resolve()
+    target = (root / child.profile_image_name).resolve()
+    if target.parent != root or not target.is_file():
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    return FileResponse(target)
+
+
+@router.delete("/children/{child_id}/profile-image")
+def remove_child_profile_image(
+    child_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    child = _parent_owned_child(db, current_user, child_id)
+    old_name = child.profile_image_name
+    child.profile_image_name = None
+    db.commit()
+    delete_profile_image(old_name)
+    return {"profile_image_url": None}
 
 @router.post("/recommendations/{rec_id}/action")
 def handle_recommendation_action(

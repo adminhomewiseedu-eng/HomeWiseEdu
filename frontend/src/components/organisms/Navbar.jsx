@@ -1,5 +1,6 @@
 import React from 'react';
 import BrandLogo from '../molecules/BrandLogo';
+import ChildAvatar from '../atoms/ChildAvatar';
 
 export default function Navbar({ currentScreen, userRole, onNavigate, activeChild, currentUser, onLogout }) {
   const normalized = (currentScreen || '').replace('/', '');
@@ -10,7 +11,7 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
 
   const handleLogoClick = () => {
     if (currentUser) {
-      onNavigate(currentUser.role === 'admin' ? '/admin' : '/parent');
+      onNavigate(currentUser.role === 'admin' ? '/admin' : currentUser.role === 'student' ? '/student' : '/parent');
     } else {
       onNavigate('/');
     }
@@ -22,24 +23,19 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
         <BrandLogo onClick={handleLogoClick} />
 
         <div className="appbar-right">
-          {(normalized === 'student' || normalized === 'portfolio' || userRole === 'student') && (
+          {(normalized === 'student' || normalized === 'portfolio') && userRole === 'parent' && (
             <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('/parent')} style={{ fontWeight: 600 }}>
               ← Parent Dashboard
             </button>
           )}
 
-          <div className="iconbtn">🔔<span className="dot"></span></div>
-
           {userRole === 'parent' && (
-            <>
-              <div className="iconbtn">✉️</div>
-              <div className="plan-tag">✨ Premium</div>
-            </>
+            <div className="plan-tag">✨ Premium</div>
           )}
 
-          <div className="avatar-btn" onClick={onLogout} title="Log out" style={{ cursor: 'pointer' }}>
-            {activeChild && normalized === 'student' ? activeChild.avatar : initial}
-          </div>
+          {activeChild && normalized === 'student'
+            ? <ChildAvatar className="avatar-btn" childId={activeChild.id} profileImageUrl={activeChild.profile_image_url} fallback={activeChild.avatar} style={{ cursor: 'pointer' }} onClick={onLogout} title="Log out" />
+            : <div className="avatar-btn" onClick={onLogout} title="Log out" style={{ cursor: 'pointer' }}>{initial}</div>}
         </div>
       </div>
     </div>

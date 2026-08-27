@@ -1,8 +1,11 @@
 import React from 'react';
 import ProgressBar from '../atoms/ProgressBar';
+import ChildAvatar from '../atoms/ChildAvatar';
 
 export default function SubjectProgressRow({
   icon,
+  childId,
+  profileImageUrl,
   iconBg = '#DBEAFE',
   name,
   percentage = 0,
@@ -10,9 +13,7 @@ export default function SubjectProgressRow({
 }) {
   return (
     <div className="subj-row">
-      <div className="ico" style={{ background: iconBg }}>
-        {icon}
-      </div>
+      <ChildAvatar className="ico" style={{ background: iconBg }} childId={childId} profileImageUrl={profileImageUrl} fallback={icon} />
       <div className="nm">{name}</div>
       <ProgressBar percentage={percentage} fillBackground={fillBackground} />
       <div className="pc">{percentage}%</div>

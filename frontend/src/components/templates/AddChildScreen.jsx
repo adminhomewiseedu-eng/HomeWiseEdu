@@ -12,6 +12,12 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
   const [educationSystem, setEducationSystem] = useState('UK');
   const [level, setLevel] = useState(4);
   const [avatar, setAvatar] = useState('🦁');
+  const [profileImage, setProfileImage] = useState(null);
+  const [enableStudentLogin, setEnableStudentLogin] = useState(false);
+  const [studentEmail, setStudentEmail] = useState('');
+  const [studentPassword, setStudentPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [formError, setFormError] = useState('');
   const [availableSubjects, setAvailableSubjects] = useState([]);
   const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
   const [subjectsLoading, setSubjectsLoading] = useState(true);
@@ -58,17 +64,29 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim()) return;
+    setFormError('');
+    if (enableStudentLogin && (!studentEmail.trim() || studentPassword.length < 8 || studentPassword !== confirmPassword)) {
+      setFormError('Enter a valid student email, matching passwords, and at least 8 characters.');
+      return;
+    }
+    if (profileImage && profileImage.size > 5 * 1024 * 1024) {
+      setFormError('Profile picture must be 5 MB or smaller.');
+      return;
+    }
     setLoading(true);
-    await onAddChild({
-      name: name.trim(),
-      age: Number(age),
-      education_system: educationSystem,
-      level: Number(level),
-      grade: getLevelLabel(level, educationSystem),
-      subject_ids: selectedSubjectIds,
-      avatar,
-    });
-    setLoading(false);
+    try {
+      await onAddChild({
+        name: name.trim(), age: Number(age), education_system: educationSystem,
+        level: Number(level), grade: getLevelLabel(level, educationSystem),
+        subject_ids: selectedSubjectIds, avatar, profile_image: profileImage,
+        student_email: enableStudentLogin ? studentEmail.trim() : null,
+        student_password: enableStudentLogin ? studentPassword : null,
+      });
+    } catch (err) {
+      setFormError(err.response?.data?.detail || 'The child profile could not be created.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const educationSystems = getEducationSystems();
@@ -99,6 +117,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
 
           <div className="card pad">
             <form onSubmit={handleSubmit}>
+              {formError && <div style={{ background: '#FFF1F0', color: '#DC2626', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{formError}</div>}
               <InputField
                 label="Child's name"
                 placeholder="e.g. Mayowa, Johnson, Leo"
@@ -178,6 +197,25 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 <label>Pick an avatar</label>
                 <AvatarPicker selected={avatar} onSelect={setAvatar} />
               </div>
+
+              <div className="field">
+                <label>Profile picture (optional)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setProfileImage(e.target.files?.[0] || null)} />
+                <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 5 }}>JPEG, PNG or WebP · maximum 5 MB. The avatar remains as fallback.</p>
+              </div>
+
+              <div className="field" style={{ marginTop: 16 }}>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="checkbox" checked={enableStudentLogin} onChange={(e) => setEnableStudentLogin(e.target.checked)} />
+                  Allow this student to log in directly
+                </label>
+              </div>
+              {enableStudentLogin && <>
+                <InputField label="Student email" type="email" value={studentEmail} onChange={(e) => setStudentEmail(e.target.value)} required />
+                <InputField label="Student password" type="password" value={studentPassword} onChange={(e) => setStudentPassword(e.target.value)} required />
+                <InputField label="Confirm student password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: -8, marginBottom: 12 }}>Passwords are securely hashed and cannot be viewed after saving.</p>
+              </>}
 
               <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading || subjectsLoading || availableSubjects.length === 0}>
                 {loading ? 'Setting up...' : 'Set up curriculum →'}

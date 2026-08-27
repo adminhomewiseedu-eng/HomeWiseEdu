@@ -70,3 +70,33 @@ async def save_evidence_upload(upload: UploadFile) -> tuple[str, str]:
     except OSError as exc:
         raise HTTPException(status_code=503, detail="Evidence storage is temporarily unavailable") from exc
     return f"/uploads/evidence/{generated_name}", generated_name
+
+
+async def save_profile_image(upload: UploadFile) -> str:
+    extension = Path(upload.filename or "").suffix.lower()
+    content_type = (upload.content_type or "").lower().split(";", 1)[0].strip()
+    allowed = {ext: types for ext, types in ALLOWED_UPLOADS.items() if ext in {".jpg", ".jpeg", ".png", ".webp"}}
+    if extension not in allowed or content_type not in allowed[extension]:
+        raise HTTPException(status_code=415, detail="Profile picture must be a JPEG, PNG, or WebP image")
+    content = await upload.read(settings.MAX_PROFILE_IMAGE_BYTES + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="Profile picture is empty")
+    if len(content) > settings.MAX_PROFILE_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Profile picture exceeds the configured size limit")
+    if not _content_matches(extension, content):
+        raise HTTPException(status_code=415, detail="Profile picture content does not match its declared type")
+    generated_name = f"{uuid.uuid4().hex}{extension}"
+    try:
+        atomic_write_bytes(Path(settings.PROFILE_IMAGE_DIR) / generated_name, content)
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Profile picture storage is temporarily unavailable") from exc
+    return generated_name
+
+
+def delete_profile_image(stored_name: str | None) -> None:
+    if not stored_name:
+        return
+    root = Path(settings.PROFILE_IMAGE_DIR).resolve()
+    target = (root / stored_name).resolve()
+    if target.parent == root:
+        target.unlink(missing_ok=True)
