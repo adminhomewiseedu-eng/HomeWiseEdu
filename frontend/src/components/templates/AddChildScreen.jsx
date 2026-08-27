@@ -107,6 +107,15 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
         </div>
 
         <div className="wrap" style={{ maxWidth: 580, paddingTop: 38, paddingBottom: 56 }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => onNavigate('/parent')}
+            style={{ marginBottom: 20 }}
+          >
+            ← Back to Parent Dashboard
+          </button>
+
           <div style={{ textAlign: 'center', marginBottom: 26 }}>
             <div style={{ fontSize: 46 }}>👋</div>
             <h1 style={{ fontSize: 30, color: 'var(--plum)', marginTop: 6 }}>Add your child</h1>
@@ -218,7 +227,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
               </>}
 
               <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading || subjectsLoading || availableSubjects.length === 0}>
-                {loading ? 'Setting up...' : 'Set up curriculum →'}
+                {loading ? 'Creating child...' : 'Create child →'}
               </Button>
             </form>
           </div>
