@@ -109,8 +109,8 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
         <div className="wrap" style={{ maxWidth: 580, paddingTop: 24, paddingBottom: 56 }}>
           <div style={{ textAlign: 'center', marginBottom: 26 }}>
             <div style={{ fontSize: 46 }}>👋</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 6 }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onNavigate('/parent')}>← Back</button>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 6 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onNavigate('/parent')} style={{ position: 'absolute', left: 24 }}>← Back</button>
               <h1 style={{ fontSize: 30, color: 'var(--plum)' }}>Add your child</h1>
             </div>
             <p style={{ color: 'var(--ink-soft)', fontWeight: 600, marginTop: 4 }}>
