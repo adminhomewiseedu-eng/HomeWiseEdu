@@ -121,42 +121,46 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
           <div className="card pad">
             <form onSubmit={handleSubmit}>
               {formError && <div style={{ background: '#FFF1F0', color: '#DC2626', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>{formError}</div>}
-              <InputField
-                label="Child's name"
-                placeholder="e.g. Mayowa, Johnson, Leo"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
+              <div className="add-child-grid add-child-grid-name">
+                <InputField
+                  label="Child's name"
+                  placeholder="e.g. Mayowa, Johnson, Leo"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
 
-              <InputField
-                label="Age"
-                type="number"
-                value={age}
-                onChange={(e) => setAge(Number(e.target.value))}
-                required
-              />
-
-              <div className="field">
-                <label>Education System / Country</label>
-                <select value={educationSystem} onChange={handleEducationSystemChange}>
-                  {educationSystems.map((sys) => (
-                    <option key={sys.id} value={sys.id}>
-                      {sys.name}
-                    </option>
-                  ))}
-                </select>
+                <InputField
+                  label="Age"
+                  type="number"
+                  value={age}
+                  onChange={(e) => setAge(Number(e.target.value))}
+                  required
+                />
               </div>
 
-              <div className="field">
-                <label>Student Level ({educationSystem})</label>
-                <select value={level} onChange={(e) => setLevel(Number(e.target.value))}>
-                  {availableLevels.map((lvl) => (
-                    <option key={lvl.level} value={lvl.level}>
-                      {lvl.label} (Level {lvl.level})
-                    </option>
-                  ))}
-                </select>
+              <div className="add-child-grid">
+                <div className="field">
+                  <label>Education System / Country</label>
+                  <select value={educationSystem} onChange={handleEducationSystemChange}>
+                    {educationSystems.map((sys) => (
+                      <option key={sys.id} value={sys.id}>
+                        {sys.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>Student Level ({educationSystem})</label>
+                  <select value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+                    {availableLevels.map((lvl) => (
+                      <option key={lvl.level} value={lvl.level}>
+                        {lvl.label} (Level {lvl.level})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="field">
@@ -215,8 +219,10 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
               </div>
               {enableStudentLogin && <>
                 <InputField label="Student email" type="email" value={studentEmail} onChange={(e) => setStudentEmail(e.target.value)} required />
-                <InputField label="Student password" type="password" value={studentPassword} onChange={(e) => setStudentPassword(e.target.value)} required />
-                <InputField label="Confirm student password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                <div className="add-child-grid">
+                  <InputField label="Student password" type="password" value={studentPassword} onChange={(e) => setStudentPassword(e.target.value)} required />
+                  <InputField label="Confirm password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                </div>
                 <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: -8, marginBottom: 12 }}>Passwords are securely hashed and cannot be viewed after saving.</p>
               </>}
 
