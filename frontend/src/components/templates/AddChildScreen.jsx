@@ -205,7 +205,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
               </div>
 
               <div className="field" style={{ marginTop: 16 }}>
-                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <label className="student-login-toggle">
                   <input type="checkbox" checked={enableStudentLogin} onChange={(e) => setEnableStudentLogin(e.target.checked)} />
                   Allow this student to log in directly
                 </label>

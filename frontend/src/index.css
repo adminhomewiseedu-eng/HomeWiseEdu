@@ -110,6 +110,8 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 .field label{ display:block; font-weight:800; color:var(--plum); margin-bottom:6px; font-size:14px; }
 .field input,.field select,.field textarea{ width:100%; padding:13px 15px; border:2px solid var(--line); border-radius:13px; font-size:15px; font-family:inherit; font-weight:600; color:var(--ink); background:#fff; }
 .field input:focus,.field select:focus,.field textarea:focus{ outline:none; border-color:var(--grape); }
+.field .student-login-toggle{ display:inline-flex; align-items:center; gap:8px; margin-bottom:0; white-space:nowrap; }
+.field .student-login-toggle input[type="checkbox"]{ width:auto; flex:0 0 auto; margin:0; padding:0; }
 .auth-alt{ text-align:center; margin-top:20px; color:var(--ink-soft); font-weight:600; font-size:14px; }
 .auth-alt a{ color:var(--grape); font-weight:800; cursor:pointer; }
 .role-pick{ display:flex; gap:8px; margin-bottom:20px; }
