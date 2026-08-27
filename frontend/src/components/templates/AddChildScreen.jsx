@@ -106,19 +106,13 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
           </div>
         </div>
 
-        <div className="wrap" style={{ maxWidth: 580, paddingTop: 38, paddingBottom: 56 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => onNavigate('/parent')}
-            style={{ marginBottom: 20 }}
-          >
-            ← Back to Parent Dashboard
-          </button>
-
+        <div className="wrap" style={{ maxWidth: 580, paddingTop: 24, paddingBottom: 56 }}>
           <div style={{ textAlign: 'center', marginBottom: 26 }}>
             <div style={{ fontSize: 46 }}>👋</div>
-            <h1 style={{ fontSize: 30, color: 'var(--plum)', marginTop: 6 }}>Add your child</h1>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 6 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onNavigate('/parent')}>← Back</button>
+              <h1 style={{ fontSize: 30, color: 'var(--plum)' }}>Add your child</h1>
+            </div>
             <p style={{ color: 'var(--ink-soft)', fontWeight: 600, marginTop: 4 }}>
               Configure their education system, level, and academic pathway.
             </p>
