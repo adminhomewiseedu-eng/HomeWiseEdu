@@ -137,6 +137,8 @@ export default function LessonPlayerScreen({
 
     const finalizeAfterPause = () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      const pendingSpoken = accumulatedTranscriptRef.current.trim();
+      if (!pendingSpoken) return;
       silenceTimerRef.current = setTimeout(() => {
         const finalSpoken = accumulatedTranscriptRef.current.trim();
         if (finalSpoken && isMountedRef.current && !isVoicePausedRef.current && !isProcessingRef.current) {
@@ -144,7 +146,7 @@ export default function LessonPlayerScreen({
           stopAllAudioAndMic();
           handleStudentVoiceInput(finalSpoken);
         }
-      }, adaptiveSilenceMs(finalSpoken));
+      }, adaptiveSilenceMs(pendingSpoken));
     };
 
     updateVoiceStatus('listening');
