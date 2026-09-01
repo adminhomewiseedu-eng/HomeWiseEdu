@@ -1,158 +1,96 @@
 import React from 'react';
 
-export default function LessonDocView({ lesson, levelLabel = 'Reception', onProceedToQuiz, practiceReady = false }) {
+const asList = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
+const paragraphs = (value) => String(value || '').split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+
+function Section({ label, icon, tone = '', children }) {
+  return <section className={`doc-chapter ${tone}`}>
+    <div className="doc-chapter-heading"><span>{icon}</span><h2>{label}</h2><i /></div>
+    <div className="doc-chapter-content">{children}</div>
+  </section>;
+}
+
+export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNumber = 1, activityType = 'Explore', onProceedToQuiz, practiceReady = false }) {
   if (!lesson) return null;
 
-  return (
-    <div className="doc-page">
-      {/* Textbook / Study Guide Top Banner */}
-      <div className="doc-page-header">
-        <div className="doc-badge-row">
-          <span className="doc-badge doc-badge-subject">
-            {lesson.unit?.subject?.title || 'Academic Pathway'}
-          </span>
-          <span className="doc-badge doc-badge-level">
-            {levelLabel}
-          </span>
-          <span className="doc-badge doc-badge-num">
-            Lesson {lesson.order_num || 1}
-          </span>
-        </div>
-        <h1 className="doc-page-title">{lesson.title}</h1>
-        {lesson.topic && <div className="doc-page-topic">Topic: {lesson.topic}</div>}
+  const activeDay = lesson.days?.find((day) => Number(day.day_number) === Number(dayNumber)) || lesson.days?.[0] || {};
+  const objectives = asList(activeDay.learning_objectives?.length ? activeDay.learning_objectives : lesson.objectives);
+  const concept = activeDay.key_concept || lesson.learn_content;
+  const introduction = activeDay.ai_script;
+  const examples = asList(activeDay.practice_questions?.length ? activeDay.practice_questions : lesson.examples);
+  const vocabulary = asList(activeDay.vocabulary?.length ? activeDay.vocabulary : lesson.vocabulary);
+  const remember = asList(lesson.key_points);
+  const realWorld = activeDay.real_world_context;
+  const origin = activeDay.origin_of_knowledge;
+  const visualSupport = activeDay.visual_support;
+  const character = activeDay.character_reference || lesson.character_connection;
+  const scripture = [activeDay.bible_reference, activeDay.biblical_theme, activeDay.biblical_application || lesson.bible_reflection].filter(Boolean);
+  const recommendations = asList(activeDay.reading_recommendations);
+
+  return <article className="doc-page">
+    <header className="doc-page-header">
+      <div className="doc-badge-row">
+        <span className="doc-badge doc-badge-subject">{lesson.unit?.subject?.title || 'Academic Pathway'}</span>
+        <span className="doc-badge doc-badge-level">{levelLabel}</span>
+        <span className="doc-badge doc-badge-num">Lesson {lesson.order_num || 1}</span>
       </div>
+      <h1 className="doc-page-title">{lesson.title}</h1>
+      <div className="doc-page-topic">{lesson.topic || activeDay.title || lesson.title}</div>
+      <div className="doc-day-strip"><span>Day {dayNumber}</span><span>{activityType}</span><span>{activeDay.estimated_duration || 'Guided lesson'}</span></div>
+    </header>
 
-      {/* Main Document Content Flow (Structured from Top to Bottom) */}
-      <div className="doc-page-body">
+    <div className="doc-page-body">
+      {origin && <Section label="Origin of Knowledge" icon="🕰️" tone="origin"><div className="doc-reading-copy">{paragraphs(origin).map((text, i) => <p key={i}>{text}</p>)}</div></Section>}
 
-        {/* 1. Learning Objectives */}
-        {lesson.objectives && lesson.objectives.length > 0 && (
-          <section className="doc-card doc-card-objectives">
-            <div className="doc-card-title">
-              <span className="icon">🎯</span>
-              <h2>1. What We'll Learn Today</h2>
-            </div>
-            <div className="doc-obj-list">
-              {lesson.objectives.map((obj, i) => (
-                <div key={i} className="doc-obj-item">
-                  <div className="doc-obj-num">{i + 1}</div>
-                  <p>{obj}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {objectives.length > 0 && <Section label="Learning Objectives" icon="🎯" tone="objectives">
+        <div className="doc-obj-grid">{objectives.map((objective, i) => <div className="doc-obj-item" key={i}><div className="doc-obj-num">{i + 1}</div><p>{objective}</p></div>)}</div>
+      </Section>}
 
-        {/* 2. Core Learning Content / Key Concept */}
-        {lesson.learn_content && (
-          <section className="doc-card doc-card-learn">
-            <div className="doc-card-title">
-              <span className="icon">💡</span>
-              <h2>2. Let's Learn the Concept</h2>
-            </div>
-            <div className="doc-learn-text">
-              {lesson.learn_content.split('\n\n').map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-            </div>
-          </section>
-        )}
+      {introduction && <Section label="Introduction" icon="👋" tone="introduction"><div className="doc-intro-callout">{paragraphs(introduction).map((text, i) => <p key={i}>{text}</p>)}</div></Section>}
 
-        {/* 3. Worked Examples in Action */}
-        {lesson.examples && lesson.examples.length > 0 && (
-          <section className="doc-card doc-card-examples">
-            <div className="doc-card-title">
-              <span className="icon">🧸</span>
-              <h2>3. Let's See It in Action!</h2>
-            </div>
-            <div className="doc-examples-list">
-              {lesson.examples.map((ex, i) => (
-                <div key={i} className="doc-example-box">
-                  <div className="doc-example-head">
-                    <span className="tag">Example {i + 1}</span>
-                    <span className="calc">{ex.calc || ex.title}</span>
-                  </div>
-                  {ex.explanation && (
-                    <p className="doc-example-desc">{ex.explanation}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {concept && <Section label="The Lesson" icon="📖" tone="lesson">
+        <div className="doc-reading-copy">{paragraphs(concept).map((text, i) => <p key={i}>{text}</p>)}</div>
+        {visualSupport && <aside className="doc-visual-note"><strong>Look and notice</strong><span>{visualSupport}</span></aside>}
+      </Section>}
 
-        {/* 4. Vocabulary & Key Words */}
-        {lesson.vocabulary && lesson.vocabulary.length > 0 && (
-          <section className="doc-card doc-card-vocab">
-            <div className="doc-card-title">
-              <span className="icon">🔑</span>
-              <h2>4. Word Power (Key Vocabulary)</h2>
-            </div>
-            <div className="doc-vocab-grid">
-              {lesson.vocabulary.map((v, i) => (
-                <div key={i} className="doc-vocab-card">
-                  <div className="word">{v.word}</div>
-                  <div className="def">{v.definition}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {examples.length > 0 && <Section label="Worked Examples" icon="🧩" tone="examples">
+        <div className="doc-examples-list">{examples.map((example, i) => {
+          const item = typeof example === 'string' ? { question: example } : example || {};
+          const question = item.question || item.title || item.calc || `Example ${i + 1}`;
+          const steps = asList(item.steps || item.hints || item.explanation);
+          const answer = item.answer || item.solution;
+          return <div className="doc-example-box" key={i}>
+            <div className="doc-example-head"><span className="tag">Example {i + 1}</span><strong>{question}</strong></div>
+            {steps.length > 0 && <ol className="doc-example-steps">{steps.map((step, n) => <li key={n}>{typeof step === 'string' ? step : JSON.stringify(step)}</li>)}</ol>}
+            {answer && <div className="doc-example-answer"><span>Answer</span>{String(answer)}</div>}
+          </div>;
+        })}</div>
+      </Section>}
 
-        {/* 5. Key Points to Remember */}
-        {lesson.key_points && lesson.key_points.length > 0 && (
-          <section className="doc-card doc-card-remember">
-            <div className="doc-card-title">
-              <span className="icon">🌟</span>
-              <h2>5. Remember These!</h2>
-            </div>
-            <div className="doc-points-list">
-              {lesson.key_points.map((kp, i) => (
-                <div key={i} className="doc-point-item">
-                  <div className="check">✓</div>
-                  <p>{kp}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+      {(realWorld || vocabulary.length > 0) && <div className="doc-two-column">
+        {realWorld && <Section label="Real-Life Connection" icon="🏡" tone="real-world"><p className="doc-compact-copy">{realWorld}</p></Section>}
+        {vocabulary.length > 0 && <Section label="Keywords" icon="🔑" tone="vocabulary"><div className="doc-vocab-list">{vocabulary.map((entry, i) => {
+          const word = typeof entry === 'string' ? entry : entry.word || entry.term;
+          const definition = typeof entry === 'string' ? '' : entry.definition || entry.meaning;
+          return <div className="doc-vocab-card" key={i}><strong>{word}</strong>{definition && <span>{definition}</span>}</div>;
+        })}</div></Section>}
+      </div>}
 
-        {/* 6. Scripture Reflection & Character Habit */}
-        {(lesson.bible_reflection || lesson.character_connection) && (
-          <section className="doc-card doc-card-growth">
-            {lesson.bible_reflection && (
-              <div className="doc-growth-box scripture">
-                <div className="growth-header">
-                  <span>✝️</span>
-                  <strong>Scripture Reflection</strong>
-                </div>
-                <p>{lesson.bible_reflection}</p>
-              </div>
-            )}
+      {remember.length > 0 && <Section label="Things to Remember" icon="🌟" tone="remember"><div className="doc-points-list">{remember.map((point, i) => <div className="doc-point-item" key={i}><div className="check">✓</div><p>{point}</p></div>)}</div></Section>}
 
-            {lesson.character_connection && (
-              <div className="doc-growth-box character">
-                <div className="growth-header">
-                  <span>🌱</span>
-                  <strong>Character Habit</strong>
-                </div>
-                <p>{lesson.character_connection}</p>
-              </div>
-            )}
-          </section>
-        )}
+      {(character || scripture.length > 0) && <div className="doc-two-column growth">
+        {character && <Section label="Character Connection" icon="🌱" tone="character"><p className="doc-compact-copy">{character}</p></Section>}
+        {scripture.length > 0 && <Section label="Bible Connection" icon="✝️" tone="scripture"><div className="doc-reading-copy compact">{scripture.map((text, i) => <p key={i}>{text}</p>)}</div></Section>}
+      </div>}
 
-        {/* 7. Lesson Practice Progression Action */}
-        {onProceedToQuiz && (
-          <div className="doc-quiz-cta-box">
-            <button className="doc-quiz-btn" onClick={onProceedToQuiz} disabled={!practiceReady}>
-              <span>{practiceReady ? "✓ I've Discussed Today's Lesson — Start Practice Quiz!" : 'Complete the guided lesson to unlock practice'}</span>
-              <span className="cta-icon">🏆 ➔</span>
-            </button>
-          </div>
-        )}
+      {recommendations.length > 0 && <Section label="Reading Recommendation" icon="📚" tone="reading"><p className="doc-compact-copy">{recommendations.join(' · ')}</p></Section>}
 
-      </div>
+      <Section label="Lesson Summary" icon="📝" tone="summary"><p className="doc-compact-copy">Today we are learning {lesson.topic || lesson.title}. Keep the key idea in mind as you explain your thinking, practise with Ms. Ade, and apply it independently.</p></Section>
+
+      {onProceedToQuiz && <div className="doc-quiz-cta-box">
+        <div><strong>{practiceReady ? 'Lesson discussion complete' : 'Keep learning with Ms. Ade'}</strong><p>{practiceReady ? 'Your practice quiz is ready.' : 'The quiz unlocks after the guided lesson and mastery check.'}</p></div>
+        <button className="doc-quiz-btn" onClick={onProceedToQuiz} disabled={!practiceReady}>{practiceReady ? 'Start Practice Quiz 🏆' : 'Practice Quiz Locked'}</button>
+      </div>}
     </div>
-  );
+  </article>;
 }

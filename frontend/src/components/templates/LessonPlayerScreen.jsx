@@ -4,6 +4,7 @@ import { curriculumAPI, lessonAPI, voiceAPI, API_BASE_URL } from '../../services
 import { speechService } from '../../services/speech';
 import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
+import { adaptiveSilenceMs, isStableBargeCandidate } from '../../utils/voiceTurn';
 
 export default function LessonPlayerScreen({
   lessonId = 1,
@@ -14,7 +15,7 @@ export default function LessonPlayerScreen({
   onProceedToQuiz
 }) {
   const [lesson, setLesson] = useState(null);
-  const [voiceStatus, setVoiceStatus] = useState('thinking'); // 'speaking' | 'listening' | 'thinking' | 'paused'
+  const [voiceStatus, setVoiceStatus] = useState('ready'); // ready | connecting | speaking | listening | thinking | reconnecting | paused
   const [isVoicePaused, setIsVoicePaused] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [lastSpokenText, setLastSpokenText] = useState('');
@@ -39,8 +40,10 @@ export default function LessonPlayerScreen({
   const bargeInTriggeredRef = useRef(false);
   const tutorPlaybackStartedAtRef = useRef(0);
   const listeningSeedRef = useRef('');
-  const awaitingBargeSpeechRef = useRef(false);
-  const bargeNoSpeechTimerRef = useRef(null);
+  const openingGraceTimerRef = useRef(null);
+  const pendingResumeRef = useRef({ mode: 'new', state: {} });
+  const bargeCandidateRef = useRef('');
+  const bargeCandidateTimerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
@@ -93,10 +96,15 @@ export default function LessonPlayerScreen({
       clearTimeout(recognitionRestartTimerRef.current);
       recognitionRestartTimerRef.current = null;
     }
-    if (bargeNoSpeechTimerRef.current) {
-      clearTimeout(bargeNoSpeechTimerRef.current);
-      bargeNoSpeechTimerRef.current = null;
+    if (openingGraceTimerRef.current) {
+      clearTimeout(openingGraceTimerRef.current);
+      openingGraceTimerRef.current = null;
     }
+    if (bargeCandidateTimerRef.current) {
+      clearTimeout(bargeCandidateTimerRef.current);
+      bargeCandidateTimerRef.current = null;
+    }
+    bargeCandidateRef.current = '';
     accumulatedTranscriptRef.current = '';
 
     if (audioPlayerRef.current) {
@@ -136,7 +144,7 @@ export default function LessonPlayerScreen({
           stopAllAudioAndMic();
           handleStudentVoiceInput(finalSpoken);
         }
-      }, 1800);
+      }, adaptiveSilenceMs(finalSpoken));
     };
 
     updateVoiceStatus('listening');
@@ -150,22 +158,13 @@ export default function LessonPlayerScreen({
         updateVoiceStatus('listening');
         setMicActive(true);
         if (listeningSeedRef.current) finalizeAfterPause();
-        if (awaitingBargeSpeechRef.current && !listeningSeedRef.current) {
-          bargeNoSpeechTimerRef.current = setTimeout(() => {
-            if (!accumulatedTranscriptRef.current.trim() && isMountedRef.current && !isProcessingRef.current) {
-              awaitingBargeSpeechRef.current = false;
-              playTutorVoice("Did you want to say something? I'm listening.");
-            }
-          }, 3500);
-        }
       },
       onResult: (transcript) => {
         if (!isMountedRef.current || isVoicePausedRef.current || isProcessingRef.current) return;
         if (transcript && transcript.trim()) {
-          awaitingBargeSpeechRef.current = false;
-          if (bargeNoSpeechTimerRef.current) {
-            clearTimeout(bargeNoSpeechTimerRef.current);
-            bargeNoSpeechTimerRef.current = null;
+          if (openingGraceTimerRef.current) {
+            clearTimeout(openingGraceTimerRef.current);
+            openingGraceTimerRef.current = null;
           }
           accumulatedTranscriptRef.current = [listeningSeedRef.current, transcript.trim()].filter(Boolean).join(' ');
           // Wait through natural pauses so a child's full thought is captured.
@@ -176,6 +175,7 @@ export default function LessonPlayerScreen({
         if (!isMountedRef.current || isVoicePausedRef.current || isProcessingRef.current) return;
         // If silence / no-speech and no pending transcript, smoothly restart listening loop
         if ((err === 'no-speech' || err === 'network') && !silenceTimerRef.current) {
+          if (err === 'network') updateVoiceStatus('reconnecting');
           if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
           recognitionRestartTimerRef.current = setTimeout(() => {
             if (isMountedRef.current && !isVoicePausedRef.current && !isProcessingRef.current && !silenceTimerRef.current) {
@@ -221,29 +221,41 @@ export default function LessonPlayerScreen({
 
         const interruptMatch = spoken.match(/^(stop|wait|pause|sorry|excuse me|ms ade)\b[,.! ]*(.*)$/i);
         const explicitInterrupt = Boolean(interruptMatch);
-        // Explicit barge-in words pause immediately even while recognition is
-        // interim. Other speech must first be finalized to avoid speaker echo.
-        if (!explicitInterrupt && !meta.latestIsFinal) return;
 
-        bargeInTriggeredRef.current = true;
-        guidanceRequestRef.current += 1;
-        speechService.cancelAllSpeech();
-        speechService.stopListening();
-        setMicActive(false);
-        isProcessingRef.current = false;
-        updateVoiceStatus('listening');
+        const takeFloor = (capturedSpeech) => {
+          if (bargeInTriggeredRef.current) return;
+          bargeInTriggeredRef.current = true;
+          guidanceRequestRef.current += 1;
+          speechService.cancelAllSpeech();
+          speechService.stopListening();
+          setMicActive(false);
+          isProcessingRef.current = false;
+          updateVoiceStatus('listening');
+          const wordsAfterInterrupt = explicitInterrupt ? (interruptMatch?.[2] || '').trim() : capturedSpeech;
+          startContinuousListening(wordsAfterInterrupt);
+        };
 
-        // "Wait" is a floor-taking signal, not the student's complete answer.
-        // Preserve only words spoken after it, then wait for the full utterance.
-        const wordsAfterInterrupt = explicitInterrupt ? (interruptMatch?.[2] || '').trim() : spoken;
-        awaitingBargeSpeechRef.current = !wordsAfterInterrupt;
-        startContinuousListening(wordsAfterInterrupt);
+        if (explicitInterrupt || meta.latestIsFinal) {
+          takeFloor(spoken);
+          return;
+        }
+
+        // A stable interim phrase may take the floor without a wake word. This
+        // avoids waiting for Chrome's sometimes-delayed final-result event.
+        if (!isStableBargeCandidate(bargeCandidateRef.current, spoken)) {
+          bargeCandidateRef.current = spoken;
+          return;
+        }
+        bargeCandidateRef.current = spoken;
+        if (bargeCandidateTimerRef.current) clearTimeout(bargeCandidateTimerRef.current);
+        bargeCandidateTimerRef.current = setTimeout(() => takeFloor(bargeCandidateRef.current), 500);
       },
       onError: () => {},
       onEnd: () => {
         setMicActive(false);
         if (isMountedRef.current && voiceStatusRef.current === 'speaking' && !bargeInTriggeredRef.current) {
-          recognitionRestartTimerRef.current = setTimeout(startBargeInListening, 250);
+          updateVoiceStatus('reconnecting');
+          recognitionRestartTimerRef.current = setTimeout(startBargeInListening, 300);
         }
       }
     });
@@ -369,6 +381,40 @@ export default function LessonPlayerScreen({
     startContinuousListening();
   };
 
+  const handleStartClass = () => {
+    if (!lesson || hasStartedVoice) return;
+    ensureAudioContext();
+    setHasStartedVoice(true);
+    isVoicePausedRef.current = false;
+    setIsVoicePaused(false);
+    updateVoiceStatus('connecting');
+
+    const resume = pendingResumeRef.current || { mode: 'new' };
+    if (resume.mode === 'complete') {
+      updateVoiceStatus('paused');
+      return;
+    }
+    if (resume.mode === 'active_question') {
+      isProcessingRef.current = true;
+      playTutorVoice(resume.question);
+      return;
+    }
+    if (resume.mode === 'resume_phase') {
+      triggerGuidance(null, lesson, 'resume');
+      return;
+    }
+
+    // Match the natural reference flow: the student may greet first. If they
+    // remain silent, Ms. Ade proactively opens the class after a short grace.
+    startContinuousListening();
+    openingGraceTimerRef.current = setTimeout(() => {
+      openingGraceTimerRef.current = null;
+      if (!accumulatedTranscriptRef.current.trim() && !isProcessingRef.current && isMountedRef.current) {
+        triggerGuidance(null, lesson);
+      }
+    }, 4500);
+  };
+
   // Toggle pause/resume voice tutor
   const handleToggleVoicePause = () => {
     if (isVoicePaused) {
@@ -391,6 +437,9 @@ export default function LessonPlayerScreen({
     const mountCycle = ++mountCycleRef.current;
     isMountedRef.current = true;
     isVoicePausedRef.current = false;
+    setHasStartedVoice(false);
+    setIsVoicePaused(false);
+    updateVoiceStatus('connecting');
 
     const initLesson = async () => {
       try {
@@ -406,28 +455,15 @@ export default function LessonPlayerScreen({
           const resume = resolveLessonResume(sessionData);
           setPracticeReady(sessionData.practice_ready === true);
           historyRef.current = sessionData.messages || [];
-          setHasStartedVoice(true);
-
-          if (resume.mode !== 'new') {
-            if (resume.mode === 'complete') {
-              updateVoiceStatus('paused');
-              return;
-            }
-            if (resume.mode === 'active_question') {
-              isProcessingRef.current = true;
-              await playTutorVoice(resume.question);
-            } else {
-              triggerGuidance(null, res.data, 'resume');
-            }
-            return;
-          }
+          pendingResumeRef.current = resume;
+          updateVoiceStatus(resume.mode === 'complete' ? 'paused' : 'ready');
+          return;
         } catch (sessionError) {
           console.warn('Lesson session resume unavailable:', sessionError);
         }
 
-        // Genuinely new session: start the proactive greeting once.
-        setHasStartedVoice(true);
-        triggerGuidance(null, res.data);
+        pendingResumeRef.current = { mode: 'new', state: {} };
+        updateVoiceStatus('ready');
       } catch (e) {
         console.error('Lesson loading error:', e);
       }
@@ -479,11 +515,11 @@ export default function LessonPlayerScreen({
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
-            onClick={handleToggleVoicePause}
+            onClick={hasStartedVoice ? handleToggleVoicePause : handleStartClass}
             className={`voice-toggle-pill ${isVoicePaused ? 'paused' : 'active'}`}
-            title={isVoicePaused ? "Click to resume Ms. Ade's voice tutor" : "Click to pause voice tutor"}
+            title={!hasStartedVoice ? 'Start the live class' : isVoicePaused ? "Click to resume Ms. Ade's voice tutor" : 'Click to pause voice tutor'}
           >
-            {isVoicePaused ? '▶️ Resume Voice' : '⏸️ Pause Voice'}
+            {!hasStartedVoice ? '🎙️ Start Class' : isVoicePaused ? '▶️ Resume Voice' : '⏸️ Pause Voice'}
           </button>
 
           <div className="pill" style={{ background: '#F3E8FF', color: 'var(--grape)' }}>
@@ -498,6 +534,8 @@ export default function LessonPlayerScreen({
           <LessonDocView
             lesson={lesson}
             levelLabel={levelLabel}
+            dayNumber={dayNumber}
+            activityType={activityType}
             onProceedToQuiz={handleProceedToQuiz}
             practiceReady={practiceReady}
           />
@@ -506,12 +544,13 @@ export default function LessonPlayerScreen({
 
       {/* Elegant Floating Voice Tutor Status Bar & Live Radar Orb */}
       <div className={`floating-voice-bar ${voiceStatus}`}>
-        <div className="voice-bar-left" onClick={handleManualInterrupt} title="Tap to interrupt and speak with Ms. Ade">
+        <div className="voice-bar-left" onClick={hasStartedVoice ? handleManualInterrupt : handleStartClass} title={hasStartedVoice ? 'Tap to speak with Ms. Ade' : 'Start the live class'}>
           <div className={`voice-avatar-orb ${voiceStatus}`}>
             👩🏾‍🏫
             {voiceStatus === 'speaking' && <span className="ring-pulse green" />}
             {voiceStatus === 'listening' && <span className="ring-pulse blue" />}
             {voiceStatus === 'thinking' && <span className="ring-pulse amber" />}
+            {(voiceStatus === 'connecting' || voiceStatus === 'reconnecting') && <span className="ring-pulse amber" />}
           </div>
 
           <div className="voice-text-info">
@@ -534,6 +573,9 @@ export default function LessonPlayerScreen({
                   💭 Thinking of response…
                 </span>
               )}
+              {voiceStatus === 'ready' && <span className="status-badge ready">Ready when you are · start the class and say hello</span>}
+              {voiceStatus === 'connecting' && <span className="status-badge connecting">Connecting microphone and Ms. Ade…</span>}
+              {voiceStatus === 'reconnecting' && <span className="status-badge reconnecting">Reconnecting listening…</span>}
               {voiceStatus === 'paused' && (
                 <span className="status-badge paused">
                   ⏸️ Voice tutor paused
@@ -544,6 +586,9 @@ export default function LessonPlayerScreen({
         </div>
 
         <div className="voice-bar-actions">
+          {!hasStartedVoice && voiceStatus !== 'paused' && (
+            <button className="voice-action-btn start-class-btn" onClick={handleStartClass}>🎙️ Start Class</button>
+          )}
           {voiceStatus === 'speaking' && (
             <button
               className="voice-action-btn interrupt-btn"
