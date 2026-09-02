@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import EvidenceForm from '../organisms/EvidenceForm';
-import TutorHeader from '../organisms/TutorHeader';
-import TutorChatStream from '../organisms/TutorChatStream';
 import { evidenceAPI, curriculumAPI } from '../../services/api';
 import { speechService } from '../../services/speech';
 
@@ -28,19 +26,17 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [tutorStatus, setTutorStatus] = useState('Ready to check your work');
-  const [messages, setMessages] = useState([
-    { sender: 'tutor', text: `Superb quiz effort, ${studentName}! Now let's submit your learning evidence. 🌟` },
-  ]);
+  const [submitError, setSubmitError] = useState('');
+
+  const quizScore = quizResult?.score ?? 0;
+  const quizTotal = quizResult?.total_questions ?? 3;
+  const quizPercentage = quizResult?.percentage ?? Math.round((quizScore / quizTotal) * 100);
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setSubmitError('');
     setTutorStatus('Checking your work…');
-    setMessages((prev) => [
-      ...prev,
-      { sender: 'me', text: "I've submitted my work! 📤" },
-      { sender: 'tutor', text: 'Let me analyze your submission with AI… 🔍' }
-    ]);
-    speechService.speak('Let me take a look at your work...');
+    speechService.playAuthoritativeAudio('Let me take a look at your work...').catch(() => {});
 
     const formData = new FormData();
     formData.append('child_id', child?.id || 1);
@@ -57,19 +53,17 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
       const evalData = res.data;
       setTimeout(() => {
         setTutorStatus('Verified ✅');
-        setMessages((prev) => [
-          ...prev,
-          { sender: 'tutor', text: evalData.ai_feedback || `Wonderful work, ${studentName}! Verified and added to your portfolio.` }
-        ]);
         setTimeout(() => onSubmitSuccess(evalData, quizResult), 1800);
       }, 1500);
     } catch (e) {
-      setTimeout(() => onSubmitSuccess({ verified: true, score: 92, ai_feedback: "Great work!" }, quizResult), 1500);
+      setTutorStatus('Submission needs attention');
+      setSubmitError(e.response?.data?.detail || 'We could not submit your evidence. Please check your connection and try again.');
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="lesson-screen">
+    <div className="lesson-screen evidence-screen">
       <div className="lesson-bar">
         <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }}>←</div>
         <div>
@@ -82,8 +76,23 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
         <div className="pill" style={{ background: '#DCFCE7', color: '#166534' }}>📤 Evidence</div>
       </div>
 
-      <div className="lesson-body">
-        <div className="doc-side" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <main className="evidence-main">
+        <section className="quiz-complete-banner">
+          <div className="quiz-complete-icon">🏆</div>
+          <div className="quiz-complete-copy">
+            <span>Quiz complete</span>
+            <h1>Wonderful effort, {studentName}!</h1>
+            <p>Ms. Ade is proud of your work. Add one piece of learning evidence to complete today’s lesson.</p>
+          </div>
+          <div className="quiz-result-score">
+            <strong>{quizScore}/{quizTotal}</strong>
+            <span>{quizPercentage}% score</span>
+          </div>
+        </section>
+
+        <div className="evidence-grid">
+          <div>
+            {submitError && <div className="evidence-error" role="alert">{submitError}</div>}
           <EvidenceForm
             taskDescription={taskDesc}
             textContent={text}
@@ -93,12 +102,20 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
             onSubmit={handleSubmit}
             isSubmitting={submitting}
           />
+          </div>
+          <aside className="evidence-next-card">
+            <div className="evidence-tutor-avatar">👩🏾‍🏫</div>
+            <span className="evidence-eyebrow">Ms. Ade</span>
+            <h2>{tutorStatus}</h2>
+            <p>Your explanation or uploaded work helps build a real learning portfolio—not just a quiz score.</p>
+            <div className="evidence-next-steps">
+              <div><b>1</b><span>Share what you learned</span></div>
+              <div><b>2</b><span>Ms. Ade evaluates it</span></div>
+              <div><b>3</b><span>Verified work enters your portfolio</span></div>
+            </div>
+          </aside>
         </div>
-        <div className="tutor-side">
-          <TutorHeader studentName={studentName} status={tutorStatus} />
-          <TutorChatStream messages={messages} />
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

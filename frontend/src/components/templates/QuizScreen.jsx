@@ -183,7 +183,7 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
   };
 
   return (
-    <div className="lesson-screen voice-first-mode">
+    <div className="lesson-screen voice-first-mode quiz-screen">
       {/* Top Bar Navigation */}
       <div className="lesson-bar">
         <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }} title="Back to Dashboard">
@@ -196,28 +196,8 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
       </div>
 
       {/* Floating Voice Status Orb */}
-      <div className="floating-voice-bar">
-        <div className={`voice-orb ${isSpeaking ? 'speaking' : ''}`}>
-          <div className="orb-ring ring-1"></div>
-          <div className="orb-ring ring-2"></div>
-          <div className="orb-ring ring-3"></div>
-          <div className="orb-core">
-            <span className="orb-icon">
-              {isSpeaking ? '🗣️' : '🌟'}
-            </span>
-          </div>
-        </div>
-        <div className="voice-text">
-          <span className="voice-label">Ms. Ade (AI Tutor)</span>
-          <span className="voice-status-text">
-            {isSpeaking ? 'Speaking to you…' : voiceFeedbackStatus}
-          </span>
-        </div>
-      </div>
-
-      {/* Centered Glassmorphic Quiz View */}
-      <div className="voice-lesson-container">
-        <div className="textbook-page" style={{ maxWidth: '680px', margin: '0 auto' }}>
+      <main className="quiz-main">
+        <div className="quiz-shell">
           <QuizCard
             questionNumber={qIdx + 1}
             totalQuestions={questions.length}
@@ -227,6 +207,14 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
             onSelectOption={(opt) => !isAnswered && setSelectedOpt(opt)}
             onSubmitAnswer={handleSubmitAnswer}
           />
+        </div>
+      </main>
+
+      <div className={`quiz-voice-bar ${isSpeaking ? 'speaking' : ''}`}>
+        <span className="quiz-voice-avatar">{isSpeaking ? '🗣️' : '👩🏾‍🏫'}</span>
+        <div>
+          <strong>Ms. Ade</strong>
+          <span>{isSpeaking ? 'Speaking to you…' : voiceFeedbackStatus}</span>
         </div>
       </div>
     </div>
