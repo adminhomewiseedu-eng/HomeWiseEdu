@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from ..database import get_db
-from ..models import Lesson, LessonDay, Child, StudentProgress, QuizQuestion, LessonSession, AIInteraction, User
+from ..models import Lesson, LessonDay, Child, StudentProgress, QuizQuestion, LessonSession, AIInteraction, User, Unit
 from ..schemas import AITutorChatRequest, AITutorChatResponse, QuizSubmission, QuizResultOut
 from ..services.openai_service import get_tutor_response, is_legacy_or_markdown_heavy, evaluate_academic_response
 from ..utils.levels import get_level_label
@@ -507,6 +507,34 @@ def _ready_session(db: Session, child_id: int, lesson_id: int, day_number: int) 
     return session
 
 
+def _quiz_questions_for_lesson(db: Session, lesson: Lesson):
+    """Return this lesson's quiz, or an exact structured-curriculum duplicate's quiz."""
+    questions = db.query(QuizQuestion).filter(
+        QuizQuestion.lesson_id == lesson.id
+    ).order_by(QuizQuestion.id.asc()).all()
+    if questions:
+        return questions
+
+    topic_key = " ".join((lesson.topic or "").lower().split())
+    if not topic_key or not lesson.unit:
+        return []
+
+    candidates = db.query(Lesson).join(Unit).filter(
+        Lesson.id != lesson.id,
+        Lesson.level == lesson.level,
+        Unit.subject_id == lesson.unit.subject_id,
+    ).all()
+    for candidate in candidates:
+        if " ".join((candidate.topic or "").lower().split()) != topic_key:
+            continue
+        candidate_questions = db.query(QuizQuestion).filter(
+            QuizQuestion.lesson_id == candidate.id
+        ).order_by(QuizQuestion.id.asc()).all()
+        if candidate_questions:
+            return candidate_questions
+    return []
+
+
 def _require_published_day(lesson: Lesson, day_number: int, current_user: User) -> None:
     day = next((item for item in lesson.days if item.day_number == day_number), None)
     if lesson.days and (not day or (current_user.role != "admin" and (day.status or "").lower() not in {"active", "published"})):
@@ -526,7 +554,10 @@ def get_quiz(
         raise HTTPException(status_code=404, detail="Lesson not found")
     _require_published_day(lesson, day_number, current_user)
     _ready_session(db, child_id, lesson_id, day_number)
-    return db.query(QuizQuestion).filter(QuizQuestion.lesson_id == lesson_id).all()
+    questions = _quiz_questions_for_lesson(db, lesson)
+    if not questions:
+        raise HTTPException(status_code=409, detail="No reviewed quiz is configured for this lesson")
+    return questions
 
 @router.post("/submit-quiz", response_model=QuizResultOut)
 def submit_quiz(
@@ -542,9 +573,9 @@ def submit_quiz(
     child = authorize_child(db, current_user, sub.child_id)
     _ready_session(db, sub.child_id, sub.lesson_id, sub.day_number)
 
-    questions = db.query(QuizQuestion).filter(QuizQuestion.lesson_id == sub.lesson_id).all()
+    questions = _quiz_questions_for_lesson(db, lesson)
     if not questions:
-        raise HTTPException(status_code=409, detail="No quiz questions are configured for this lesson")
+        raise HTTPException(status_code=409, detail="No reviewed quiz is configured for this lesson")
 
     correct_count = 0
     total_questions = len(questions)

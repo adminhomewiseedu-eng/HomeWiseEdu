@@ -18,6 +18,7 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
   const [voiceFeedbackStatus, setVoiceFeedbackStatus] = useState('Cheering you on! 🌟');
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [loadError, setLoadError] = useState('');
+  const [isLoadingQuiz, setIsLoadingQuiz] = useState(true);
 
   const isMountedRef = useRef(true);
   const spokenQuestionIdRef = useRef(null);
@@ -51,10 +52,16 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
     }
     lessonAPI.getQuiz(child?.id || 1, effectiveLessonId, dayNumber)
       .then((res) => {
-        if (isMountedRef.current) setQuizQuestions(res.data || []);
+        if (!isMountedRef.current) return;
+        const loadedQuestions = Array.isArray(res.data) ? res.data : [];
+        setQuizQuestions(loadedQuestions);
+        if (!loadedQuestions.length) setLoadError('No reviewed quiz is configured for this lesson.');
       })
       .catch((err) => {
         if (isMountedRef.current) setLoadError(err.response?.data?.detail || 'Practice quiz is not ready yet.');
+      })
+      .finally(() => {
+        if (isMountedRef.current) setIsLoadingQuiz(false);
       });
 
     return () => {
@@ -99,7 +106,10 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
   if (!questions.length) {
     return (
       <div style={{ height: '100vh', background: '#FAF7FD', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--plum)' }}>
-        <h2>{loadError || 'Loading quiz assessment...'}</h2>
+        <div style={{ textAlign: 'center' }}>
+          <h2>{isLoadingQuiz ? 'Loading quiz assessment...' : (loadError || 'No quiz questions are available.')}</h2>
+          {!isLoadingQuiz && <button className="quiz-submit" onClick={onExit}>Back to Dashboard</button>}
+        </div>
       </div>
     );
   }
