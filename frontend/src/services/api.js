@@ -111,6 +111,12 @@ export const lessonAPI = {
 export const voiceAPI = {
   getTTSAudio: (text, voiceId = null, signal = undefined) =>
     api.post('/api/voice/tts', { text, voice_id: voiceId }, { signal }),
+  createRealtimeSession: (childId, lessonId, dayNumber = 1) =>
+    api.post('/api/voice/realtime-session', {
+      child_id: childId,
+      lesson_id: lessonId,
+      day_number: dayNumber,
+    }),
 };
 
 export const reportsAPI = {

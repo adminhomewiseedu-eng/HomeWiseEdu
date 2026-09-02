@@ -355,7 +355,10 @@ async def tutor_chat_guidance(
     guidance = await get_tutor_response(
         student_name=student_name,
         context=context,
-        user_prompt=req.user_prompt if not req.event_type else "Continue the current lesson from the authoritative phase.",
+        # A delivery confirmation may arrive with the learner's response. Keep
+        # that response in the conversational turn while the server advances
+        # the already-delivered teacher phase.
+        user_prompt=req.user_prompt or "Continue the current lesson from the authoritative phase.",
         history=req.message_history,
         pedagogical_state=new_ped_state,
         eval_result=eval_result

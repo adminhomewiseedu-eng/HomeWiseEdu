@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import LessonDocView from '../organisms/LessonDocView';
 import { curriculumAPI, lessonAPI, voiceAPI, API_BASE_URL } from '../../services/api';
 import { speechService } from '../../services/speech';
+import { RealtimeClassroom } from '../../services/realtimeClassroom';
 import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
-import { adaptiveSilenceMs, isStableBargeCandidate } from '../../utils/voiceTurn';
+import { adaptiveSilenceMs, isStableBargeCandidate, looksLikeTeacherEcho } from '../../utils/voiceTurn';
 
 export default function LessonPlayerScreen({
   lessonId = 1,
@@ -44,6 +45,9 @@ export default function LessonPlayerScreen({
   const pendingResumeRef = useRef({ mode: 'new', state: {} });
   const bargeCandidateRef = useRef('');
   const bargeCandidateTimerRef = useRef(null);
+  const pendingDeliveryRef = useRef(null);
+  const realtimeRef = useRef(null);
+  const transcriptHandlerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
   const eduSys = child?.education_system || 'UK';
@@ -53,23 +57,6 @@ export default function LessonPlayerScreen({
   const updateVoiceStatus = useCallback((status) => {
     voiceStatusRef.current = status;
     setVoiceStatus(status);
-  }, []);
-
-  const normalizedWords = (text) => new Set(
-    String(text || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').split(/\s+/).filter((word) => word.length > 2)
-  );
-
-  const looksLikeTeacherEcho = useCallback((transcript) => {
-    const normalizedHeard = String(transcript || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
-    const normalizedTeacher = String(currentTutorSpeechRef.current || '').toLowerCase().replace(/[^a-z0-9' ]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!normalizedHeard) return true;
-    if (normalizedTeacher.includes(normalizedHeard)) return true;
-
-    const heard = [...normalizedWords(normalizedHeard)];
-    if (!heard.length) return true;
-    const teacher = normalizedWords(normalizedTeacher);
-    const overlap = heard.filter((word) => teacher.has(word)).length / heard.length;
-    return overlap >= 0.5;
   }, []);
 
   // Ensure Web Audio context is initialized/resumed on user gesture
@@ -121,6 +108,12 @@ export default function LessonPlayerScreen({
   // Step 2 & 6: Automated Hands-Free Voice Listener Loop with 1.8s Speech Pause Buffer (VAD Debounce)
   const startContinuousListening = useCallback((initialTranscript = '') => {
     if (!isMountedRef.current || isVoicePausedRef.current || isProcessingRef.current) {
+      return;
+    }
+
+    if (realtimeRef.current?.connected) {
+      updateVoiceStatus('listening');
+      setMicActive(true);
       return;
     }
 
@@ -208,6 +201,7 @@ export default function LessonPlayerScreen({
   // interrupt herself through the speakers.
   const startBargeInListening = useCallback(() => {
     if (!isMountedRef.current || isVoicePausedRef.current || bargeInTriggeredRef.current) return;
+    if (realtimeRef.current?.connected) return;
 
     speechService.startListening({
       continuous: true,
@@ -219,10 +213,10 @@ export default function LessonPlayerScreen({
         // not impose a noticeable wake-word window on the student.
         if (Date.now() - tutorPlaybackStartedAtRef.current < 500) return;
         const spoken = (meta.latestTranscript || transcript).trim();
-        if (!spoken || looksLikeTeacherEcho(spoken)) return;
-
+        if (!spoken) return;
         const interruptMatch = spoken.match(/^(stop|wait|pause|sorry|excuse me|ms ade)\b[,.! ]*(.*)$/i);
         const explicitInterrupt = Boolean(interruptMatch);
+        if (!explicitInterrupt && looksLikeTeacherEcho(spoken, currentTutorSpeechRef.current)) return;
 
         const takeFloor = (capturedSpeech) => {
           if (bargeInTriggeredRef.current) return;
@@ -261,11 +255,23 @@ export default function LessonPlayerScreen({
         }
       }
     });
-  }, [looksLikeTeacherEcho, startContinuousListening, updateVoiceStatus]);
+  }, [startContinuousListening, updateVoiceStatus]);
 
   // Play audio safely using authoritative single audio controller
   const playTutorVoice = useCallback(async (textToSpeak, afterCurrentPlayback = null) => {
     if (!textToSpeak || !isMountedRef.current) return;
+
+    if (realtimeRef.current?.connected) {
+      currentTutorSpeechRef.current = textToSpeak;
+      updateVoiceStatus('speaking');
+      setLastSpokenText(textToSpeak);
+      const completed = await realtimeRef.current.speak(textToSpeak);
+      isProcessingRef.current = false;
+      if (!isMountedRef.current || isVoicePausedRef.current) return;
+      if (completed && afterCurrentPlayback) afterCurrentPlayback();
+      else startContinuousListening();
+      return;
+    }
 
     stopAllAudioAndMic();
     bargeInTriggeredRef.current = false;
@@ -354,12 +360,16 @@ export default function LessonPlayerScreen({
       // Speak response out loud
       const textToSpeak = speech_text || tutor_reply;
       const afterPlayback = requires_delivery_confirmation && delivery_token
-        ? () => triggerGuidance(null, currentLesson, 'teacher_delivery_completed', delivery_token)
+        ? () => {
+            pendingDeliveryRef.current = delivery_token;
+            startContinuousListening();
+          }
         : null;
       await playTutorVoice(textToSpeak, afterPlayback);
 
     } catch (e) {
       console.error('Tutor guidance voice error:', e);
+      if (deliveryToken) pendingDeliveryRef.current = deliveryToken;
       isProcessingRef.current = false;
       updateVoiceStatus('listening');
       startContinuousListening();
@@ -369,8 +379,16 @@ export default function LessonPlayerScreen({
   // Student spoken input received from microphone
   const handleStudentVoiceInput = (transcript) => {
     if (!transcript || isVoicePausedRef.current) return;
-    triggerGuidance(transcript);
+    const deliveryToken = pendingDeliveryRef.current;
+    pendingDeliveryRef.current = null;
+    triggerGuidance(
+      transcript,
+      activeLessonRef.current,
+      deliveryToken ? 'teacher_delivery_completed' : null,
+      deliveryToken
+    );
   };
+  transcriptHandlerRef.current = handleStudentVoiceInput;
 
   // Instant interruption: student clicks microphone orb to speak immediately
   const handleManualInterrupt = () => {
@@ -380,10 +398,16 @@ export default function LessonPlayerScreen({
     isProcessingRef.current = false;
     isVoicePausedRef.current = false;
     setIsVoicePaused(false);
+    if (realtimeRef.current?.connected) {
+      realtimeRef.current.cancelResponse();
+      updateVoiceStatus('listening');
+      setMicActive(true);
+      return;
+    }
     startContinuousListening();
   };
 
-  const handleStartClass = () => {
+  const handleStartClass = async () => {
     if (!lesson || hasStartedVoice) return;
     ensureAudioContext();
     setHasStartedVoice(true);
@@ -391,9 +415,50 @@ export default function LessonPlayerScreen({
     setIsVoicePaused(false);
     updateVoiceStatus('connecting');
 
+    try {
+      const tokenResponse = await voiceAPI.createRealtimeSession(child?.id || 1, lesson.id, dayNumber);
+      const realtime = new RealtimeClassroom({
+        onSpeechStarted: () => {
+          if (!isMountedRef.current || isVoicePausedRef.current) return;
+          updateVoiceStatus('listening');
+          setMicActive(true);
+        },
+        onSpeechStopped: () => {
+          if (isMountedRef.current && !isVoicePausedRef.current) updateVoiceStatus('thinking');
+        },
+        onTranscript: (text) => transcriptHandlerRef.current?.(text),
+        onTutorSpeaking: () => {
+          if (isMountedRef.current) updateVoiceStatus('speaking');
+        },
+        onTutorDone: () => {
+          if (isMountedRef.current && !isVoicePausedRef.current) {
+            updateVoiceStatus('listening');
+            setMicActive(true);
+          }
+        },
+        onConnectionState: (state) => {
+          if (state === 'failed' || state === 'disconnected') updateVoiceStatus('reconnecting');
+        },
+        onError: (message) => console.warn('Realtime classroom:', message),
+      });
+      await realtime.connect(tokenResponse.data.client_secret);
+      if (!isMountedRef.current) {
+        realtime.close();
+        return;
+      }
+      realtimeRef.current = realtime;
+      updateVoiceStatus('listening');
+      setMicActive(true);
+    } catch (error) {
+      console.warn('Realtime unavailable; using classroom voice fallback.', error);
+      realtimeRef.current?.close();
+      realtimeRef.current = null;
+    }
+
     const resume = pendingResumeRef.current || { mode: 'new' };
     if (resume.mode === 'complete') {
       updateVoiceStatus('paused');
+      realtimeRef.current?.setMuted(true);
       return;
     }
     if (resume.mode === 'active_question') {
@@ -424,12 +489,14 @@ export default function LessonPlayerScreen({
       isVoicePausedRef.current = false;
       setIsVoicePaused(false);
       ensureAudioContext();
+      realtimeRef.current?.setMuted(false);
       startContinuousListening();
     } else {
       // Pause
       isVoicePausedRef.current = true;
       setIsVoicePaused(true);
       updateVoiceStatus('paused');
+      realtimeRef.current?.setMuted(true);
       stopAllAudioAndMic();
     }
   };
@@ -441,6 +508,7 @@ export default function LessonPlayerScreen({
     isVoicePausedRef.current = false;
     setHasStartedVoice(false);
     setIsVoicePaused(false);
+    pendingDeliveryRef.current = null;
     updateVoiceStatus('connecting');
 
     const initLesson = async () => {
@@ -477,6 +545,9 @@ export default function LessonPlayerScreen({
       isMountedRef.current = false;
       mountCycleRef.current += 1;
       guidanceRequestRef.current += 1;
+      pendingDeliveryRef.current = null;
+      realtimeRef.current?.close();
+      realtimeRef.current = null;
       stopAllAudioAndMic();
     };
   }, [lessonId]); // Runs on lesson load
