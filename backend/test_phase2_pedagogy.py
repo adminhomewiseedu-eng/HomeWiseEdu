@@ -121,6 +121,54 @@ def test_worked_examples_require_explicit_teacher_delivery_completion():
     assert state["worked_examples_completed"] == 1
 
 
+def test_student_greeting_starts_scheduled_teaching_without_a_proceed_turn():
+    child_id, headers = parent_and_child()
+    guidance = {
+        "tutor_reply": "Good morning! Today we are learning Counting to 5. Where have you seen numbers at home?",
+        "speech_text": "Good morning! Today we are learning Counting to 5. Where have you seen numbers at home?",
+    }
+    with patch("backend.routers.lessons.get_tutor_response", new=AsyncMock(return_value=guidance)):
+        response = client.post("/api/lessons/chat-guidance", headers=headers, json={
+            "child_id": child_id,
+            "lesson_id": 1,
+            "day_number": 1,
+            "current_tab": 0,
+            "user_prompt": "Good morning",
+            "message_history": [],
+        })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["pedagogical_state"]["current_phase"] == "TEACHING"
+    assert payload["requires_delivery_confirmation"] is True
+    assert payload["delivery_token"]
+
+
+def test_later_greeting_does_not_reset_an_in_progress_lesson():
+    child_id, headers = parent_and_child()
+    state = advance_pedagogical_state(None, None, is_opening_turn=True)
+    state["current_phase"] = "WORKED_EXAMPLE_2"
+    db = SessionLocal()
+    try:
+        db.add(LessonSession(
+            child_id=child_id, lesson_id=1, day_number=1,
+            pedagogical_state=state, messages=[], is_completed=False,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    guidance = {"tutor_reply": "Hello again. Let us continue.", "speech_text": "Hello again. Let us continue."}
+    with patch("backend.routers.lessons.get_tutor_response", new=AsyncMock(return_value=guidance)):
+        response = client.post("/api/lessons/chat-guidance", headers=headers, json={
+            "child_id": child_id, "lesson_id": 1, "day_number": 1,
+            "current_tab": 0, "user_prompt": "hello", "message_history": [],
+        })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["pedagogical_state"]["current_phase"] == "WORKED_EXAMPLE_2"
+
+
 def test_pending_evidence_is_saved_without_progress_or_xp():
     child_id, headers = parent_and_child()
     db = SessionLocal()

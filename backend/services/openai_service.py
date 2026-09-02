@@ -349,7 +349,14 @@ async def get_tutor_response(
         elif current_phase == "GREETING":
             phase_directive += "INSTRUCTION: Greet the student warmly by name and ask how they are doing today. STOP immediately and yield the mic."
         elif current_phase == "TEACHING":
-            phase_directive += "INSTRUCTION: Explain the core concept clearly in 2-3 friendly sentences. Do not ask for mastery yet. Smoothly transition to the first worked example."
+            phase_directive += (
+                f"INSTRUCTION: Begin the scheduled lesson now. Briefly greet {student_name} by name, "
+                f"clearly introduce today's lesson '{context.get('lesson_title', '')}', and explain the "
+                "core concept in 2-3 friendly, age-appropriate sentences. Ask ONE simple, lesson-specific "
+                "question about what the learner already knows or has noticed in real life, then STOP and "
+                "yield the mic. Never ask 'What can I do for you today?' and never wait for the learner to "
+                "say 'proceed'. Do not ask for mastery yet."
+            )
         elif current_phase == "WORKED_EXAMPLE_1":
             phase_directive += "INSTRUCTION: Deliver Worked Example 1. If student responded to an interactive step, warmly acknowledge and complete the example. Transition naturally to Worked Example 2."
         elif current_phase == "WORKED_EXAMPLE_2":

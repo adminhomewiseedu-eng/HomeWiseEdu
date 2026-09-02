@@ -271,10 +271,16 @@ async def tutor_chat_guidance(
         LessonSession.day_number == req.day_number
     ).first()
 
-    is_opening_turn = not req.event_type and (
-        not req.user_prompt or req.user_prompt.strip().lower() in ["welcome", "hello", "start", "start lesson"]
-    )
     current_ped_state = session.pedagogical_state if session and session.pedagogical_state else None
+    opening_prompt = (req.user_prompt or "").strip().lower() in {
+        "welcome", "hello", "hi", "hey", "good morning", "good afternoon",
+        "start", "start lesson", "begin", "let's begin", "lets begin",
+    }
+    # Only a genuinely new session can be an opening turn. A later "hello"
+    # must never reset an in-progress lesson back to GREETING.
+    is_opening_turn = not req.event_type and not current_ped_state and (
+        not req.user_prompt or opening_prompt
+    )
 
     if req.event_type == "teacher_delivery_completed":
         if not current_ped_state:
@@ -351,6 +357,15 @@ async def tutor_chat_guidance(
         context=context,
         event_type=req.event_type
     )
+    # If the learner initiates the class with a greeting, acknowledge it and
+    # launch the scheduled teaching content in the same response. Requiring a
+    # second "proceed" turn creates a generic assistant-like opening.
+    if is_opening_turn and req.user_prompt:
+        new_ped_state = advance_pedagogical_state(
+            new_ped_state,
+            req.user_prompt,
+            context=context,
+        )
 
     guidance = await get_tutor_response(
         student_name=student_name,
