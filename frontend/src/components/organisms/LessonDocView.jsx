@@ -1,4 +1,5 @@
 import React from 'react';
+import { buildLessonNotes } from '../../utils/lessonNotes';
 
 const asList = (value) => Array.isArray(value) ? value.filter(Boolean) : value ? [value] : [];
 const paragraphs = (value) => String(value || '').split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
@@ -10,14 +11,16 @@ function Section({ label, icon, tone = '', children }) {
   </section>;
 }
 
-export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNumber = 1, activityType = 'Explore', onProceedToQuiz, practiceReady = false }) {
+export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNumber = 1, activityType = 'Explore', onProceedToQuiz, practiceReady = false, conversationMessages = [] }) {
   if (!lesson) return null;
 
   const activeDay = lesson.days?.find((day) => Number(day.day_number) === Number(dayNumber)) || lesson.days?.[0] || {};
   const objectives = asList(activeDay.learning_objectives?.length ? activeDay.learning_objectives : lesson.objectives);
   const concept = activeDay.key_concept || lesson.learn_content;
   const introduction = activeDay.ai_script;
-  const examples = asList(activeDay.practice_questions?.length ? activeDay.practice_questions : lesson.examples);
+  const notes = buildLessonNotes(lesson, activeDay, conversationMessages);
+  const examples = notes.workedExamples;
+  const practiceQuestions = notes.practiceQuestions;
   const vocabulary = asList(activeDay.vocabulary?.length ? activeDay.vocabulary : lesson.vocabulary);
   const remember = asList(lesson.key_points);
   const realWorld = activeDay.real_world_context;
@@ -50,6 +53,7 @@ export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNum
 
       {concept && <Section label="The Lesson" icon="📖" tone="lesson">
         <div className="doc-reading-copy">{paragraphs(concept).map((text, i) => <p key={i}>{text}</p>)}</div>
+        {notes.teachingNote && <div className="doc-live-note"><strong>Ms. Ade's teaching note</strong><p>{notes.teachingNote}</p></div>}
         {visualSupport && <aside className="doc-visual-note"><strong>Look and notice</strong><span>{visualSupport}</span></aside>}
       </Section>}
 
@@ -64,6 +68,13 @@ export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNum
             {steps.length > 0 && <ol className="doc-example-steps">{steps.map((step, n) => <li key={n}>{typeof step === 'string' ? step : JSON.stringify(step)}</li>)}</ol>}
             {answer && <div className="doc-example-answer"><span>Answer</span>{String(answer)}</div>}
           </div>;
+        })}</div>
+      </Section>}
+
+      {practiceQuestions.length > 0 && <Section label="Practice Prompts" icon="✏️" tone="practice-prompts">
+        <div className="doc-prompts-list">{practiceQuestions.map((prompt, i) => {
+          const item = typeof prompt === 'string' ? { question: prompt } : prompt || {};
+          return <div className="doc-prompt-item" key={i}><span>{i + 1}</span><p>{item.question || item.q || item.title || String(prompt)}</p></div>;
         })}</div>
       </Section>}
 
@@ -85,7 +96,7 @@ export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNum
 
       {recommendations.length > 0 && <Section label="Reading Recommendation" icon="📚" tone="reading"><p className="doc-compact-copy">{recommendations.join(' · ')}</p></Section>}
 
-      <Section label="Lesson Summary" icon="📝" tone="summary"><p className="doc-compact-copy">Today we are learning {lesson.topic || lesson.title}. Keep the key idea in mind as you explain your thinking, practise with Ms. Ade, and apply it independently.</p></Section>
+      <Section label="Lesson Summary" icon="📝" tone="summary"><p className="doc-compact-copy">{notes.lessonSummary || `Today we are learning ${lesson.topic || lesson.title}. Keep the key idea in mind as you explain your thinking, practise with Ms. Ade, and apply it independently.`}</p></Section>
 
       {onProceedToQuiz && <div className="doc-quiz-cta-box">
         <div><strong>{practiceReady ? 'Lesson discussion complete' : 'Keep learning with Ms. Ade'}</strong><p>{practiceReady ? 'Your practice quiz is ready.' : 'The quiz unlocks after the guided lesson and mastery check.'}</p></div>

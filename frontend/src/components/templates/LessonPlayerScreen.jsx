@@ -22,6 +22,7 @@ export default function LessonPlayerScreen({
   const [lastSpokenText, setLastSpokenText] = useState('');
   const [hasStartedVoice, setHasStartedVoice] = useState(false);
   const [practiceReady, setPracticeReady] = useState(false);
+  const [conversationMessages, setConversationMessages] = useState([]);
 
   // In-memory conversation history (NO UI transcripts rendered to the student)
   const historyRef = useRef([]);
@@ -344,9 +345,15 @@ export default function LessonPlayerScreen({
       setPracticeReady(practice_ready === true);
       const newHistory = [
         ...updatedHistory,
-        { sender: 'tutor', text: tutor_reply, speech_text }
+        {
+          sender: 'tutor',
+          text: tutor_reply,
+          speech_text,
+          phase: res.data.pedagogical_state?.current_phase || null,
+        }
       ];
       historyRef.current = newHistory;
+      setConversationMessages(newHistory);
 
       // Asynchronously record session
       lessonAPI.updateSession({
@@ -525,6 +532,7 @@ export default function LessonPlayerScreen({
           const resume = resolveLessonResume(sessionData);
           setPracticeReady(sessionData.practice_ready === true);
           historyRef.current = sessionData.messages || [];
+          setConversationMessages(sessionData.messages || []);
           pendingResumeRef.current = resume;
           updateVoiceStatus(resume.mode === 'complete' ? 'paused' : 'ready');
           return;
@@ -611,6 +619,7 @@ export default function LessonPlayerScreen({
             activityType={activityType}
             onProceedToQuiz={handleProceedToQuiz}
             practiceReady={practiceReady}
+            conversationMessages={conversationMessages}
           />
         </div>
       </div>
