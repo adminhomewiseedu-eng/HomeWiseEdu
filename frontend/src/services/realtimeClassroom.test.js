@@ -35,3 +35,40 @@ it('requests audio that is constrained to the backend-approved teacher text', as
   realtime.handleEvent({ type: 'response.done', response: { status: 'completed' } });
   assert.equal(await pending, true);
 });
+
+it('delivers realtime function calls without treating them as completed speech', () => {
+  let toolCall;
+  let tutorDone = 0;
+  const realtime = new RealtimeClassroom({
+    onToolCall: (call) => { toolCall = call; },
+    onTutorDone: () => { tutorDone += 1; },
+  });
+  realtime.handleEvent({
+    type: 'response.done',
+    response: {
+      status: 'completed',
+      output: [{
+        type: 'function_call',
+        name: 'submit_academic_response',
+        call_id: 'call-1',
+        arguments: '{"student_response":"five"}',
+      }],
+    },
+  });
+  assert.equal(toolCall.name, 'submit_academic_response');
+  assert.equal(toolCall.callId, 'call-1');
+  assert.equal(tutorDone, 0);
+});
+
+it('returns tool output to the same realtime conversation and starts tagged audio', () => {
+  const sent = [];
+  const realtime = new RealtimeClassroom();
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => sent.push(JSON.parse(payload)) };
+  realtime.sendFunctionOutput('call-2', { result: 'correct' }, 'Continue.', 'academic_feedback');
+  assert.equal(sent[0].type, 'conversation.item.create');
+  assert.equal(sent[0].item.type, 'function_call_output');
+  assert.equal(sent[1].type, 'response.create');
+  realtime.handleEvent({ type: 'response.created', response: { id: 'response-2' } });
+  assert.equal(realtime.responseTag, 'academic_feedback');
+});

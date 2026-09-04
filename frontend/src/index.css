@@ -435,6 +435,8 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 .floating-voice-bar.thinking{ border-color:var(--sun); }
 .floating-voice-bar.ready{ border-color:#C4B5FD; }
 .floating-voice-bar.connecting,.floating-voice-bar.reconnecting{ border-color:var(--sun); }
+.floating-voice-bar.live-active{ width:68px; min-height:68px; padding:9px; justify-content:center; border-radius:50%; }
+.floating-voice-bar.live-active .voice-bar-left{ flex:0 0 auto; cursor:default; }
 
 .voice-bar-left{ display:flex; align-items:center; gap:14px; cursor:pointer; flex:1; }
 

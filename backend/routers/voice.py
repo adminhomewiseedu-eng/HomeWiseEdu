@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 
 import httpx
@@ -10,7 +11,7 @@ from ..config import settings
 from ..database import get_db
 from ..services.openai_service import generate_openai_speech_audio
 from ..services.elevenlabs_service import generate_speech_audio
-from ..models import User
+from ..models import User, Lesson, LessonSession
 from .auth import get_current_user, authorize_child
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,40 @@ class RealtimeSessionRequest(BaseModel):
     lesson_id: int
     day_number: int = 1
 
+
+def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
+    curriculum = {
+        "student_name": child.name,
+        "level": child.level,
+        "subject": lesson.unit.subject.title if lesson.unit and lesson.unit.subject else "General",
+        "unit": lesson.unit.title if lesson.unit else "General Unit",
+        "lesson": lesson.title,
+        "topic": lesson.topic or lesson.title,
+        "day_number": active_day.day_number if active_day else 1,
+        "activity_type": active_day.activity_type if active_day else "Explore",
+        "objectives": (active_day.learning_objectives if active_day else None) or lesson.objectives or [],
+        "key_concept": (active_day.key_concept if active_day else None) or lesson.learn_content or "",
+        "teaching_script": active_day.ai_script if active_day else "",
+        "worked_example_seeds": (active_day.practice_questions if active_day else None) or lesson.examples or [],
+        "real_world_context": active_day.real_world_context if active_day else "",
+    }
+    active_state = state or {"current_phase": "GREETING", "practice_ready": False}
+    return (
+        "You are Ms. Ade, the warm, concise live teacher in HomeWiseEdu. This is a child-safe "
+        "voice classroom. Use the supplied structured curriculum only; never choose a new curriculum "
+        "or claim that a learner passed, mastered, advanced, or unlocked a quiz. The FastAPI backend "
+        "is the sole authority for phase progression and practice_ready. Keep normal replies brief and "
+        "natural, usually one or two short paragraphs, then yield. Respond directly and immediately to "
+        "repeats, clarifications, acknowledgements, and interruptions without changing the task. When the "
+        "authoritative phase is UNDERSTANDING_CHECK, GUIDED_PRACTICE, APPLICATION, or MASTERY_CHECK, "
+        "you MUST call submit_academic_response for any substantive learner answer before giving correctness "
+        "feedback. Do not call it for a repeat, clarification, 'wait', or simple acknowledgement. Treat the "
+        "latest backend tool output or app-supplied phase instruction as authoritative. During a teacher-led "
+        "phase, deliver only that phase and stop; the app will authorize the next phase after playback completes.\n"
+        f"STRUCTURED_CURRICULUM={json.dumps(curriculum, ensure_ascii=True)}\n"
+        f"INITIAL_AUTHORITATIVE_STATE={json.dumps(active_state, ensure_ascii=True)}"
+    )
+
 @router.post("/realtime-session")
 async def create_realtime_session(
     req: RealtimeSessionRequest,
@@ -38,31 +73,58 @@ async def create_realtime_session(
     current_user: User = Depends(get_current_user),
 ):
     """Mint a short-lived browser credential; the permanent key never leaves the server."""
-    authorize_child(db, current_user, req.child_id)
+    child = authorize_child(db, current_user, req.child_id)
     response.headers["Cache-Control"] = "no-store"
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="Realtime classroom is not configured")
+
+    lesson = db.query(Lesson).filter(Lesson.id == req.lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    active_day = next((day for day in lesson.days if day.day_number == req.day_number), None)
+    if lesson.days and not active_day:
+        raise HTTPException(status_code=404, detail="Lesson day not found")
+    if active_day and current_user.role != "admin" and (active_day.status or "").lower() not in {"active", "published"}:
+        raise HTTPException(status_code=404, detail="Lesson day not found")
+    lesson_session = db.query(LessonSession).filter(
+        LessonSession.child_id == req.child_id,
+        LessonSession.lesson_id == req.lesson_id,
+        LessonSession.day_number == req.day_number,
+    ).first()
+    authoritative_state = lesson_session.pedagogical_state if lesson_session else None
+    base_instructions = _realtime_classroom_instructions(child, lesson, active_day, authoritative_state)
 
     safety_id = hashlib.sha256(f"homewiseedu:{current_user.id}".encode()).hexdigest()
     session = {
         "type": "realtime",
         "model": settings.OPENAI_REALTIME_MODEL,
         "output_modalities": ["audio"],
-        "instructions": (
-            "You are the streaming voice for Ms. Ade. Never choose curriculum, evaluate mastery, "
-            "or respond to the learner independently. Only speak text explicitly supplied in a "
-            "response.create instruction by the HomeWiseEdu backend."
-        ),
+        "instructions": base_instructions,
+        "tools": [{
+            "type": "function",
+            "name": "submit_academic_response",
+            "description": (
+                "Submit a substantive answer to the current authoritative academic checkpoint. "
+                "Never use for repeats, clarifications, interruptions, or acknowledgements."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "student_response": {"type": "string", "description": "The learner's answer exactly as heard."}
+                },
+                "required": ["student_response"],
+                "additionalProperties": False,
+            },
+        }],
+        "tool_choice": "auto",
         "audio": {
             "input": {
                 "transcription": {"model": "gpt-4o-mini-transcribe", "language": "en"},
                 "noise_reduction": {"type": "near_field"},
                 "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.62,
-                    "prefix_padding_ms": 350,
-                    "silence_duration_ms": 1100,
-                    "create_response": False,
+                    "type": "semantic_vad",
+                    "eagerness": "auto",
+                    "create_response": True,
                     "interrupt_response": True,
                 },
             },
@@ -88,6 +150,8 @@ async def create_realtime_session(
             "client_secret": data.get("value"),
             "expires_at": data.get("expires_at"),
             "model": (data.get("session") or {}).get("model", settings.OPENAI_REALTIME_MODEL),
+            "base_instructions": base_instructions,
+            "pedagogical_state": authoritative_state or {},
         }
     except HTTPException:
         raise

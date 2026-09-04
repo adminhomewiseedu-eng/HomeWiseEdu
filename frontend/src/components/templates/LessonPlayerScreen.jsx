@@ -48,6 +48,11 @@ export default function LessonPlayerScreen({
   const bargeCandidateTimerRef = useRef(null);
   const pendingDeliveryRef = useRef(null);
   const realtimeRef = useRef(null);
+  const realtimeBaseInstructionsRef = useRef('');
+  const realtimeStateRef = useRef({});
+  const realtimeDeliveryTokenRef = useRef(null);
+  const lastRealtimeStudentTranscriptRef = useRef('');
+  const realtimeEventInFlightRef = useRef(false);
   const transcriptHandlerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -414,6 +419,34 @@ export default function LessonPlayerScreen({
     startContinuousListening();
   };
 
+  const applyRealtimeAuthority = useCallback((data, realtime = realtimeRef.current) => {
+    if (!data) return;
+    const state = data.pedagogical_state || {};
+    realtimeStateRef.current = state;
+    realtimeDeliveryTokenRef.current = data.delivery_token || null;
+    setPracticeReady(data.practice_ready === true);
+    if (realtime?.connected) {
+      realtime.updateInstructions(
+        `${realtimeBaseInstructionsRef.current}\nCURRENT_AUTHORITATIVE_STATE=${JSON.stringify(state)}\n${data.phase_instruction || ''}`
+      );
+    }
+  }, []);
+
+  const postRealtimeEvent = useCallback(async (event) => {
+    const response = await lessonAPI.sendRealtimePedagogyEvent({
+      child_id: child?.id || 1,
+      lesson_id: activeLessonRef.current?.id || lessonId,
+      day_number: dayNumber,
+      ...event,
+    });
+    return response.data;
+  }, [child, lessonId, dayNumber]);
+
+  const realtimeResponseTag = (state, fallback = 'academic_prompt') => (
+    ['TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY']
+      .includes(state?.current_phase) ? 'teacher_delivery' : fallback
+  );
+
   const handleStartClass = async () => {
     if (!lesson || hasStartedVoice) return;
     ensureAudioContext();
@@ -422,9 +455,13 @@ export default function LessonPlayerScreen({
     setIsVoicePaused(false);
     updateVoiceStatus('connecting');
 
+    let realtimeStarted = false;
     try {
       const tokenResponse = await voiceAPI.createRealtimeSession(child?.id || 1, lesson.id, dayNumber);
-      const realtime = new RealtimeClassroom({
+      realtimeBaseInstructionsRef.current = tokenResponse.data.base_instructions || '';
+      realtimeStateRef.current = tokenResponse.data.pedagogical_state || {};
+      let realtime;
+      realtime = new RealtimeClassroom({
         onSpeechStarted: () => {
           if (!isMountedRef.current || isVoicePausedRef.current) return;
           updateVoiceStatus('listening');
@@ -433,18 +470,78 @@ export default function LessonPlayerScreen({
         onSpeechStopped: () => {
           if (isMountedRef.current && !isVoicePausedRef.current) updateVoiceStatus('thinking');
         },
-        onTranscript: (text) => transcriptHandlerRef.current?.(text),
+        onTranscript: (text) => {
+          lastRealtimeStudentTranscriptRef.current = text;
+        },
         onTutorSpeaking: () => {
           if (isMountedRef.current) updateVoiceStatus('speaking');
         },
-        onTutorDone: () => {
-          if (isMountedRef.current && !isVoicePausedRef.current) {
-            updateVoiceStatus('listening');
-            setMicActive(true);
+        onToolCall: async ({ name, callId, arguments: rawArguments }) => {
+          if (name !== 'submit_academic_response' || realtimeEventInFlightRef.current) return;
+          realtimeEventInFlightRef.current = true;
+          try {
+            const args = JSON.parse(rawArguments || '{}');
+            const studentResponse = String(args.student_response || lastRealtimeStudentTranscriptRef.current || '').trim();
+            const data = await postRealtimeEvent({
+              event_type: 'academic_response',
+              student_response: studentResponse,
+            });
+            applyRealtimeAuthority(data, realtime);
+            realtime.sendFunctionOutput(callId, {
+              authoritative_state: data.pedagogical_state,
+              evaluation: data.evaluation,
+              instruction: data.phase_instruction,
+            }, data.phase_instruction, realtimeResponseTag(data.pedagogical_state, 'academic_feedback'));
+            lastRealtimeStudentTranscriptRef.current = '';
+          } catch (error) {
+            console.warn('Realtime academic tool failed safely:', error);
+            realtime.sendFunctionOutput(callId, {
+              error: 'Academic validation was unavailable. Do not advance or grant mastery. Ask the learner to try again.',
+            }, 'Backend validation failed. Do not advance. Briefly ask the learner to try the same question again.');
+          } finally {
+            realtimeEventInFlightRef.current = false;
           }
         },
-        onConnectionState: (state) => {
-          if (state === 'failed' || state === 'disconnected') updateVoiceStatus('reconnecting');
+        onTutorDone: async ({ completed, transcript, hadAudio, responseTag }) => {
+          if (!isMountedRef.current || isVoicePausedRef.current) return;
+          updateVoiceStatus('listening');
+          setMicActive(true);
+          if (!completed || !hadAudio || realtimeEventInFlightRef.current) return;
+          const completedPhase = realtimeStateRef.current?.current_phase || null;
+          if (transcript) {
+            setLastSpokenText(transcript);
+            setConversationMessages((messages) => [
+              ...messages,
+              { sender: 'tutor', text: transcript, speech_text: transcript, phase: completedPhase },
+            ]);
+          }
+          realtimeEventInFlightRef.current = true;
+          try {
+            const deliveryToken = responseTag === 'teacher_delivery'
+              ? realtimeDeliveryTokenRef.current
+              : null;
+            const data = await postRealtimeEvent({
+              event_type: deliveryToken ? 'teacher_delivery_completed' : 'assistant_response_completed',
+              delivery_token: deliveryToken,
+              assistant_response: transcript || null,
+              student_response: deliveryToken ? null : (lastRealtimeStudentTranscriptRef.current || null),
+            });
+            applyRealtimeAuthority(data, realtime);
+            lastRealtimeStudentTranscriptRef.current = '';
+            if (deliveryToken && data.pedagogical_state?.current_phase !== 'PRACTICE_READY') {
+              realtime.createResponse(
+                data.phase_instruction,
+                realtimeResponseTag(data.pedagogical_state)
+              );
+            }
+          } catch (error) {
+            console.warn('Realtime state persistence failed safely:', error);
+          } finally {
+            realtimeEventInFlightRef.current = false;
+          }
+        },
+        onConnectionState: (health) => {
+          if (health.connectionState === 'failed' || health.connectionState === 'disconnected') updateVoiceStatus('reconnecting');
         },
         onError: (message) => console.warn('Realtime classroom:', message),
       });
@@ -454,13 +551,19 @@ export default function LessonPlayerScreen({
         return;
       }
       realtimeRef.current = realtime;
-      updateVoiceStatus('listening');
+      const startData = await postRealtimeEvent({ event_type: 'start_class' });
+      applyRealtimeAuthority(startData, realtime);
+      realtime.createResponse(startData.phase_instruction, realtimeResponseTag(startData.pedagogical_state));
+      realtimeStarted = true;
+      updateVoiceStatus('speaking');
       setMicActive(true);
     } catch (error) {
       console.warn('Realtime unavailable; using classroom voice fallback.', error);
       realtimeRef.current?.close();
       realtimeRef.current = null;
     }
+
+    if (realtimeStarted) return;
 
     const resume = pendingResumeRef.current || { mode: 'new' };
     if (resume.mode === 'complete') {
@@ -506,6 +609,16 @@ export default function LessonPlayerScreen({
       realtimeRef.current?.setMuted(true);
       stopAllAudioAndMic();
     }
+  };
+
+  const handleEndClass = () => {
+    isVoicePausedRef.current = true;
+    setIsVoicePaused(true);
+    realtimeRef.current?.close();
+    realtimeRef.current = null;
+    stopAllAudioAndMic();
+    updateVoiceStatus('paused');
+    setHasStartedVoice(false);
   };
 
   // Initial Mount: Load lesson & start hands-free voice loop
@@ -596,11 +709,11 @@ export default function LessonPlayerScreen({
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button
-            onClick={hasStartedVoice ? handleToggleVoicePause : handleStartClass}
+            onClick={hasStartedVoice ? handleEndClass : handleStartClass}
             className={`voice-toggle-pill ${isVoicePaused ? 'paused' : 'active'}`}
-            title={!hasStartedVoice ? 'Start the live class' : isVoicePaused ? "Click to resume Ms. Ade's voice tutor" : 'Click to pause voice tutor'}
+            title={!hasStartedVoice ? 'Start the live class' : 'End the live class'}
           >
-            {!hasStartedVoice ? '🎙️ Start Class' : isVoicePaused ? '▶️ Resume Voice' : '⏸️ Pause Voice'}
+            {!hasStartedVoice ? '🎙️ Start Class' : '⏹ End Class'}
           </button>
 
           <div className="pill" style={{ background: '#F3E8FF', color: 'var(--grape)' }}>
@@ -625,8 +738,8 @@ export default function LessonPlayerScreen({
       </div>
 
       {/* Elegant Floating Voice Tutor Status Bar & Live Radar Orb */}
-      <div className={`floating-voice-bar ${voiceStatus}`}>
-        <div className="voice-bar-left" onClick={hasStartedVoice ? handleManualInterrupt : handleStartClass} title={hasStartedVoice ? 'Tap to speak with Ms. Ade' : 'Start the live class'}>
+      <div className={`floating-voice-bar ${voiceStatus} ${hasStartedVoice ? 'live-active' : ''}`}>
+        <div className="voice-bar-left" onClick={!hasStartedVoice ? handleStartClass : undefined} title={!hasStartedVoice ? 'Start the live class' : 'Live class active'}>
           <div className={`voice-avatar-orb ${voiceStatus}`}>
             👩🏾‍🏫
             {voiceStatus === 'speaking' && <span className="ring-pulse green" />}
@@ -635,26 +748,9 @@ export default function LessonPlayerScreen({
             {(voiceStatus === 'connecting' || voiceStatus === 'reconnecting') && <span className="ring-pulse amber" />}
           </div>
 
-          <div className="voice-text-info">
+          {!hasStartedVoice && <div className="voice-text-info">
             <div className="voice-title">Ms. Ade · Live Voice Tutor</div>
             <div className="voice-status-msg">
-              {voiceStatus === 'speaking' && (
-                <span className="status-badge speaking">
-                  <span className="live-wave"><i></i><i></i><i></i><i></i></span>
-                  Ms. Ade is speaking · microphone open for interruption…
-                </span>
-              )}
-              {voiceStatus === 'listening' && (
-                <span className="status-badge listening">
-                  <span className="mic-dot" />
-                  Listening to you… (Speak out loud)
-                </span>
-              )}
-              {voiceStatus === 'thinking' && (
-                <span className="status-badge thinking">
-                  💭 Thinking of response…
-                </span>
-              )}
               {voiceStatus === 'ready' && <span className="status-badge ready">Ready when you are · start the class and say hello</span>}
               {voiceStatus === 'connecting' && <span className="status-badge connecting">Connecting microphone and Ms. Ade…</span>}
               {voiceStatus === 'reconnecting' && <span className="status-badge reconnecting">Reconnecting listening…</span>}
@@ -664,10 +760,10 @@ export default function LessonPlayerScreen({
                 </span>
               )}
             </div>
-          </div>
+          </div>}
         </div>
 
-        <div className="voice-bar-actions">
+        {!hasStartedVoice && <div className="voice-bar-actions">
           {!hasStartedVoice && voiceStatus !== 'paused' && (
             <button className="voice-action-btn start-class-btn" onClick={handleStartClass}>🎙️ Start Class</button>
           )}
@@ -702,7 +798,7 @@ export default function LessonPlayerScreen({
           >
             {practiceReady ? 'Start Quiz 🏆' : 'Quiz Locked'}
           </button>
-        </div>
+        </div>}
       </div>
     </div>
   );

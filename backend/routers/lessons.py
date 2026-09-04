@@ -245,6 +245,190 @@ class SessionUpdate(BaseModel):
     current_tab: int = 0
     messages: Optional[List[Dict[str, str]]] = []
 
+
+class RealtimePedagogyEvent(BaseModel):
+    model_config = {"extra": "forbid"}
+    child_id: int
+    lesson_id: int
+    day_number: int = 1
+    event_type: str
+    student_response: Optional[str] = None
+    assistant_response: Optional[str] = None
+    delivery_token: Optional[str] = None
+
+
+ACADEMIC_PHASES = {"UNDERSTANDING_CHECK", "GUIDED_PRACTICE", "APPLICATION", "MASTERY_CHECK"}
+TEACHER_DELIVERY_PHASES = {"TEACHING", "WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "LESSON_SUMMARY"}
+
+
+def _lesson_context(lesson, active_day, child) -> Dict[str, Any]:
+    level_num = child.level if child.level is not None else lesson.level
+    return {
+        "student_name": child.name,
+        "level": level_num,
+        "level_label": get_level_label(level_num, child.education_system),
+        "subject": lesson.unit.subject.title if lesson.unit and lesson.unit.subject else "General",
+        "unit_title": lesson.unit.title if lesson.unit else "General Unit",
+        "lesson_title": lesson.title,
+        "lesson_topic": lesson.topic or lesson.title,
+        "day_number": active_day.day_number if active_day else 1,
+        "activity_type": active_day.activity_type if active_day else "Explore",
+        "curriculum_country": lesson.curriculum_country or "",
+        "learning_objectives": (active_day.learning_objectives if active_day else None) or lesson.objectives or [],
+        "key_concept": (active_day.key_concept if active_day else None) or lesson.learn_content or "",
+        "ai_script": active_day.ai_script if active_day else "",
+        "examples": (active_day.practice_questions if active_day and active_day.practice_questions else lesson.examples) or [],
+        "real_world_context": (active_day.real_world_context if active_day else None) or "Use an age-appropriate everyday example.",
+    }
+
+
+def _realtime_phase_directive(state: Dict[str, Any], eval_result: Optional[Dict[str, Any]] = None) -> str:
+    phase = state.get("current_phase", "GREETING")
+    common = (
+        f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
+        "Keep the spoken turn concise and natural. "
+    )
+    directives = {
+        "TEACHING": "Greet the learner by name and teach the key concept briefly, then stop speaking.",
+        "WORKED_EXAMPLE_1": "Deliver worked example 1 step by step, then stop speaking.",
+        "WORKED_EXAMPLE_2": "Deliver a distinct worked example 2 step by step, then stop speaking.",
+        "WORKED_EXAMPLE_3": "Deliver a distinct worked example 3 step by step, then stop speaking.",
+        "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
+        "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",
+        "APPLICATION": "Give one curriculum-grounded real-life application task and wait for the learner.",
+        "MASTERY_CHECK": "Ask exactly one independent mastery question and wait for the learner.",
+        "LESSON_SUMMARY": "Give a brief lesson summary and encouragement, then stop speaking.",
+        "PRACTICE_READY": "The backend has unlocked practice. Briefly tell the learner the quiz is ready.",
+    }
+    evaluation = ""
+    if eval_result:
+        evaluation = (
+            " Backend evaluation result: "
+            f"{eval_result.get('result', 'unclear')}. "
+            f"Feedback basis: {eval_result.get('feedback', '')}. "
+            "Follow this result; do not replace it with your own mastery decision."
+        )
+    if state.get("is_repeat_turn"):
+        return common + "Repeat or rephrase the preserved active question/task without changing it."
+    return common + directives.get(phase, "Continue only within the current phase and ask one question at a time.") + evaluation
+
+
+@router.post("/realtime-event")
+async def realtime_pedagogy_event(
+    payload: RealtimePedagogyEvent,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Compact authoritative state bridge for the persistent Realtime classroom."""
+    child = authorize_child(db, current_user, payload.child_id)
+    lesson = db.query(Lesson).filter(Lesson.id == payload.lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    active_day = next((day for day in lesson.days if day.day_number == payload.day_number), None)
+    if lesson.days and not active_day:
+        raise HTTPException(status_code=404, detail="Lesson day not found")
+    if active_day and current_user.role != "admin" and (active_day.status or "").lower() not in {"active", "published"}:
+        raise HTTPException(status_code=404, detail="Lesson day not found")
+
+    session = db.query(LessonSession).filter(
+        LessonSession.child_id == payload.child_id,
+        LessonSession.lesson_id == payload.lesson_id,
+        LessonSession.day_number == payload.day_number,
+    ).first()
+    state = dict(session.pedagogical_state or {}) if session else {}
+    response_phase = state.get("current_phase")
+    context = _lesson_context(lesson, active_day, child)
+    eval_result = None
+
+    if payload.event_type == "start_class":
+        if not state:
+            state = advance_pedagogical_state(None, None, is_opening_turn=True)
+        if state.get("current_phase") == "GREETING":
+            state = advance_pedagogical_state(state, "start class", context=context)
+    elif payload.event_type == "teacher_delivery_completed":
+        if state.get("current_phase") not in TEACHER_DELIVERY_PHASES:
+            raise HTTPException(status_code=409, detail="No teacher delivery is awaiting completion")
+        expected = state.get("pending_delivery_token")
+        if not expected or not secrets.compare_digest(payload.delivery_token or "", expected):
+            raise HTTPException(status_code=409, detail="Stale or invalid teacher delivery token")
+        if state.get("pending_delivery_phase") != state.get("current_phase"):
+            raise HTTPException(status_code=409, detail="Teacher delivery phase is stale")
+        state = advance_pedagogical_state(
+            state,
+            None,
+            context=context,
+            event_type="teacher_delivery_completed",
+        )
+    elif payload.event_type == "academic_response":
+        phase = state.get("current_phase")
+        if phase not in ACADEMIC_PHASES:
+            raise HTTPException(status_code=409, detail="The current phase is not accepting academic evidence")
+        response_text = (payload.student_response or "").strip()
+        if not response_text:
+            raise HTTPException(status_code=400, detail="Student response is required")
+        clarification = is_repeat_or_clarification(response_text)
+        acknowledgement = is_acknowledgement(response_text)
+        if not clarification and not acknowledgement:
+            eval_result = await evaluate_academic_response(
+                student_name=child.name,
+                context=context,
+                phase=phase,
+                student_response=response_text,
+                last_tutor_question=state.get("active_question") or "",
+            )
+        state = advance_pedagogical_state(
+            state,
+            response_text,
+            eval_result=eval_result,
+            context=context,
+        )
+    elif payload.event_type == "assistant_response_completed":
+        assistant_text = (payload.assistant_response or "").strip()
+        if assistant_text:
+            populate_active_academic_state(state, {"tutor_reply": assistant_text}, context)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported realtime pedagogy event")
+
+    if state.get("current_phase") in TEACHER_DELIVERY_PHASES and not state.get("pending_delivery_token"):
+        state["pending_delivery_token"] = secrets.token_urlsafe(24)
+        state["pending_delivery_phase"] = state.get("current_phase")
+
+    messages = list(session.messages or []) if session else []
+    if payload.student_response:
+        messages.append({"sender": "me", "text": payload.student_response})
+    if payload.assistant_response:
+        messages.append({
+            "sender": "tutor",
+            "text": payload.assistant_response,
+            "phase": response_phase or state.get("current_phase"),
+        })
+    messages = messages[-80:]
+
+    if not session:
+        session = LessonSession(
+            child_id=payload.child_id,
+            lesson_id=payload.lesson_id,
+            day_number=payload.day_number,
+            current_tab=0,
+            pedagogical_state=state,
+            messages=messages,
+            is_completed=state.get("practice_ready", False),
+        )
+        db.add(session)
+    else:
+        session.pedagogical_state = state
+        session.messages = messages
+        session.is_completed = bool(state.get("practice_ready"))
+    db.commit()
+
+    return {
+        "pedagogical_state": state,
+        "practice_ready": bool(state.get("practice_ready")),
+        "delivery_token": state.get("pending_delivery_token") or None,
+        "phase_instruction": _realtime_phase_directive(state, eval_result),
+        "evaluation": eval_result,
+    }
+
 @router.post("/chat-guidance", response_model=AITutorChatResponse)
 async def tutor_chat_guidance(
     req: AITutorChatRequest,

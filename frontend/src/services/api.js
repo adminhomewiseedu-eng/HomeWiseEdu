@@ -97,6 +97,7 @@ export const lessonAPI = {
     }),
   updateSession: (sessionData) => api.post('/api/lessons/session', sessionData),
   getSession: (childId, lessonId, dayNumber = 1) => api.get(`/api/lessons/session/${childId}/${lessonId}/${dayNumber}`),
+  sendRealtimePedagogyEvent: (payload) => api.post('/api/lessons/realtime-event', payload),
   getQuiz: (childId, lessonId, dayNumber = 1) =>
     api.get(`/api/lessons/${lessonId}/quiz`, { params: { child_id: childId, day_number: dayNumber } }),
   submitQuiz: (childId, lessonId, dayNumber, answers) =>
