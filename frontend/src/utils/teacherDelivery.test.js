@@ -30,6 +30,13 @@ test('accepts a complete teaching turn ending in a concrete counting task', () =
   ), true);
 });
 
+test('rejects teaching that sends the learner to find physical objects', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'WORKED_EXAMPLE_2',
+    'We have practised counting carefully from one to five and touched each item only once as we counted. Juliet, can you find five objects around you and count them out loud for me?',
+  ), false);
+});
+
 test('accepts a complete worked example with a direct handoff question', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'WORKED_EXAMPLE_1',

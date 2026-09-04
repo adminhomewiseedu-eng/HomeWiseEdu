@@ -548,12 +548,32 @@ export default function LessonPlayerScreen({
           realtimeEventInFlightRef.current = true;
           try {
             const teacherDeliveryPhases = ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
+            const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
             const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
               && Boolean(realtimeDeliveryTokenRef.current);
             if (isAuthoritativeTeacherDelivery && !teacherDeliveryLooksComplete(completedPhase, transcript)) {
               realtime.createResponse(
                 `${realtimePhaseInstructionRef.current}\nYour previous turn was only an acknowledgement or ended before the required phase content and direct question. Continue the same phase now. Do not repeat the acknowledgement and do not ask whether the learner is ready.`,
                 'teacher_delivery',
+              );
+              return;
+            }
+            const unsubmittedStudentResponse = String(lastRealtimeStudentTranscriptRef.current || '').trim();
+            if (academicPhases.includes(completedPhase)
+              && responseTag !== 'academic_feedback'
+              && unsubmittedStudentResponse) {
+              // Realtime occasionally speaks a generic acknowledgement instead
+              // of invoking the required academic tool. Fail closed through the
+              // backend and immediately continue from its authoritative result.
+              const data = await postRealtimeEvent({
+                event_type: 'academic_response',
+                student_response: unsubmittedStudentResponse,
+              });
+              applyRealtimeAuthority(data, realtime);
+              lastRealtimeStudentTranscriptRef.current = '';
+              realtime.createResponse(
+                data.phase_instruction,
+                realtimeResponseTag(data.pedagogical_state, 'academic_feedback'),
               );
               return;
             }

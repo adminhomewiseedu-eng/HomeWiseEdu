@@ -312,6 +312,8 @@ def _realtime_phase_directive(
         "Every teaching sentence must be directly supported by this curriculum anchor. Silently check the topic "
         "before speaking. Never introduce an unrelated concept, analogy, subject, activity, or vocabulary. If the "
         "learner introduces an unrelated topic, answer briefly and immediately return to the anchored lesson topic. "
+        "Outside GREETING, do not ask whether the learner is ready. Never ask the learner to find, fetch, or describe "
+        "objects around them; use only the authored examples in CURRICULUM_ANCHOR. "
         "If the learner asks you to continue, go on, carry on, proceed, or resume, immediately continue this phase's "
         "actual lesson content from the interrupted point. Never produce a standalone acknowledgement such as "
         "'Okay, let's go' and stop. In the same response, teach the remaining content and end with the required "

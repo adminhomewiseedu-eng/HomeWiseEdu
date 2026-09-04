@@ -20,6 +20,7 @@ export function teacherDeliveryLooksComplete(phase, transcript) {
   const minimum = MINIMUM_WORDS[phase];
   if (!minimum) return false;
   if (text.split(/\s+/).filter(Boolean).length < minimum) return false;
+  if (/\b(?:find|fetch|pick up|hold up|describe)\b[^.!?]{0,60}\bobjects?\b/i.test(text)) return false;
   if (QUESTION_PHASES.has(phase) && !text.includes('?')) return false;
   if (QUESTION_PHASES.has(phase) && phase !== 'GREETING') {
     const questionEnd = text.lastIndexOf('?');
