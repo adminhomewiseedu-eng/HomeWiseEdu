@@ -324,20 +324,25 @@ def _realtime_phase_directive(
             "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
             "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
             "content from the note. Do not ask the learner to find or provide materials. After a useful explanation "
-            "and demonstration, ask at most one simple noticing question, then stop and wait for the learner."
+            f"and demonstration, you MUST finish with this direct handoff question: '{context.get('student_name', 'Student')}, "
+            "what did you notice in that step?' Do not end with 'let's try', 'let's continue', or another unfinished "
+            "transition. Ask the question, then stop and wait for the learner's answer."
         ),
         "WORKED_EXAMPLE_1": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_one}. "
             "Include the setup, reasoning, and answer. The teacher must do the example rather than asking the "
-            "learner to invent it. Then ask one simple noticing question and stop and wait."
+            f"learner to invent it. You MUST end by asking: '{context.get('student_name', 'Student')}, what answer "
+            "did I get in that example?' Then stop and wait for the learner's answer."
         ),
         "WORKED_EXAMPLE_2": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_two}. "
-            "Include the setup, reasoning, and answer. Then ask one simple noticing question and stop and wait."
+            f"Include the setup, reasoning, and answer. You MUST end by asking: '{context.get('student_name', 'Student')}, "
+            "what answer did I get this time?' Then stop and wait for the learner's answer."
         ),
         "WORKED_EXAMPLE_3": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_three}. "
-            "Include the setup, reasoning, and answer. Finish with one short readiness check, then stop and wait."
+            f"Include the setup, reasoning, and answer. You MUST end by asking: '{context.get('student_name', 'Student')}, "
+            "are you ready to try one with me?' Then stop and wait for the learner's answer."
         ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",

@@ -70,6 +70,21 @@ def test_realtime_delivery_tokens_enforce_all_three_worked_examples():
     assert data["pedagogical_state"]["practice_ready"] is False
 
 
+def test_teacher_delivery_ends_with_an_explicit_named_handoff_question():
+    child_id, headers = parent_and_child("handoff")
+    greeting = event(headers, child_id, "start_class").json()
+    teaching = event(
+        headers,
+        child_id,
+        "teacher_delivery_completed",
+        delivery_token=greeting["delivery_token"],
+    ).json()
+
+    assert teaching["pedagogical_state"]["current_phase"] == "TEACHING"
+    assert "Realtime Child, what did you notice in that step?" in teaching["phase_instruction"]
+    assert "Do not end with 'let's try'" in teaching["phase_instruction"]
+
+
 def test_realtime_clarification_preserves_active_question_without_evaluation():
     child_id, headers = parent_and_child("clarification")
     started = event(headers, child_id, "start_class").json()
