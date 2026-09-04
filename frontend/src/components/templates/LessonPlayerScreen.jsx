@@ -477,7 +477,28 @@ export default function LessonPlayerScreen({
           if (isMountedRef.current) updateVoiceStatus('speaking');
         },
         onToolCall: async ({ name, callId, arguments: rawArguments }) => {
-          if (name !== 'submit_academic_response' || realtimeEventInFlightRef.current) return;
+          if (name !== 'submit_academic_response') return;
+          const authoritativePhase = realtimeStateRef.current?.current_phase;
+          const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
+          if (!academicPhases.includes(authoritativePhase)) {
+            realtime.sendFunctionOutput(callId, {
+              accepted_as_academic_evidence: false,
+              authoritative_phase: authoritativePhase,
+              instruction: 'This is a teacher-led phase. Respond naturally without evaluating mastery or mentioning submission.',
+            }, (
+              'The learner was heard clearly. This is still a teacher-led phase, so do not submit or evaluate the '
+              + 'answer. Briefly acknowledge what the learner said, continue the current authoritative teaching '
+              + 'phase, and never mention a tool, submission, technical problem, or failure.'
+            ), realtimeResponseTag(realtimeStateRef.current, 'teacher_conversation'));
+            lastRealtimeStudentTranscriptRef.current = '';
+            return;
+          }
+          if (realtimeEventInFlightRef.current) {
+            realtime.sendFunctionOutput(callId, {
+              error: 'Authoritative validation is already in progress. Do not evaluate or advance.',
+            }, 'Briefly ask the learner to wait a moment. Do not mention a tool, submission, or technical failure.');
+            return;
+          }
           realtimeEventInFlightRef.current = true;
           try {
             const args = JSON.parse(rawArguments || '{}');
