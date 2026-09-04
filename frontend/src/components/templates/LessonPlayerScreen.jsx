@@ -545,6 +545,16 @@ export default function LessonPlayerScreen({
               { sender: 'tutor', text: transcript, speech_text: transcript, phase: completedPhase },
             ]);
           }
+          if (responseTag === 'lesson_complete') {
+            updateVoiceStatus('paused');
+            setMicActive(false);
+            setIsVoicePaused(true);
+            isVoicePausedRef.current = true;
+            realtime.close();
+            realtimeRef.current = null;
+            setHasStartedVoice(false);
+            return;
+          }
           realtimeEventInFlightRef.current = true;
           try {
             const teacherDeliveryPhases = ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
@@ -588,6 +598,10 @@ export default function LessonPlayerScreen({
             });
             applyRealtimeAuthority(data, realtime);
             lastRealtimeStudentTranscriptRef.current = '';
+            if (data.practice_ready === true && data.pedagogical_state?.current_phase === 'PRACTICE_READY') {
+              realtime.createResponse(data.phase_instruction, 'lesson_complete');
+              return;
+            }
           } catch (error) {
             console.warn('Realtime state persistence failed safely:', error);
           } finally {

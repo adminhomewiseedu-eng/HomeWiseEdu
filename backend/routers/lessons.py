@@ -355,7 +355,11 @@ def _realtime_phase_directive(
         "APPLICATION": "Give one curriculum-grounded real-life application task and wait for the learner.",
         "MASTERY_CHECK": "Ask exactly one independent mastery question and wait for the learner.",
         "LESSON_SUMMARY": "Give a brief lesson summary and encouragement, then stop speaking.",
-        "PRACTICE_READY": "The backend has unlocked practice. Briefly tell the learner the quiz is ready.",
+        "PRACTICE_READY": (
+            f"Tell {context.get('student_name', 'the learner')} clearly: 'Well done, "
+            f"{context.get('student_name', 'Student')}! You have completed today's class. Your practice quiz is now "
+            "ready.' Do not ask another question."
+        ),
     }
     evaluation = ""
     if eval_result:

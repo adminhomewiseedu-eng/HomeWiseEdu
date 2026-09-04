@@ -80,6 +80,8 @@ def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
         "the current authoritative teaching or worked example immediately from the point of interruption. Do not "
         "reply only with an acknowledgement such as 'Okay', 'Let's go', or 'Sure'. The same spoken turn must contain "
         "the resumed lesson content and must finish with the phase's required direct learner question. "
+        "At an academic checkpoint, immediately acknowledge that you heard the learner in a few neutral words, "
+        "without saying whether the answer is correct, then call submit_academic_response in the same response. "
         "If the learner repeats the same phrase while waiting, acknowledge it once and answer immediately. "
         "Respond directly and immediately to "
         "repeats, clarifications, acknowledgements, and interruptions without changing the task. When the "

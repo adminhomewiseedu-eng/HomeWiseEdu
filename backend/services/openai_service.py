@@ -463,7 +463,7 @@ async def evaluate_academic_response(
     objs_str = ", ".join(learning_objs) if isinstance(learning_objs, list) else str(learning_objs)
     key_concept = context.get("key_concept", "")
     examples = context.get("examples", [])
-    exs_str = json.dumps(examples) if isinstance(examples, (list, dict)) else str(examples)
+    exs_str = (json.dumps(examples) if isinstance(examples, (list, dict)) else str(examples))[:1200]
 
     evaluation_prompt = (
         f"STUDENT EVALUATION TASK:\n"
@@ -502,7 +502,12 @@ async def evaluate_academic_response(
         {"role": "user", "content": evaluation_prompt}
     ]
 
-    ai_raw = await call_openai(eval_messages, temperature=0.1, response_format={"type": "json_object"})
+    ai_raw = await call_openai(
+        eval_messages,
+        temperature=0.1,
+        max_tokens=220,
+        response_format={"type": "json_object"},
+    )
     if ai_raw:
         try:
             data = json.loads(ai_raw)
