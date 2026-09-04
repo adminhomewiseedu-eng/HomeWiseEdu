@@ -179,7 +179,7 @@ export class RealtimeClassroom {
   }
 
   updateInstructions(instructions) {
-    return this.send({ type: 'session.update', session: { instructions } });
+    return this.send({ type: 'session.update', session: { type: 'realtime', instructions } });
   }
 
   createResponse(instructions = null, responseTag = null) {

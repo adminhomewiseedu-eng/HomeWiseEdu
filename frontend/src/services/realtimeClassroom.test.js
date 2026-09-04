@@ -36,6 +36,21 @@ it('requests audio that is constrained to the backend-approved teacher text', as
   assert.equal(await pending, true);
 });
 
+it('sends a valid typed session update for authoritative phase instructions', () => {
+  let sent;
+  const realtime = new RealtimeClassroom();
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => { sent = JSON.parse(payload); } };
+  realtime.updateInstructions('Authoritative phase: WORKED_EXAMPLE_2.');
+  assert.deepEqual(sent, {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      instructions: 'Authoritative phase: WORKED_EXAMPLE_2.',
+    },
+  });
+});
+
 it('delivers realtime function calls without treating them as completed speech', () => {
   let toolCall;
   let tutorDone = 0;
