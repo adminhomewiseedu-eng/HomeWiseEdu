@@ -1,3 +1,4 @@
+import json
 import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
@@ -282,10 +283,24 @@ def _lesson_context(lesson, active_day, child) -> Dict[str, Any]:
     }
 
 
-def _realtime_phase_directive(state: Dict[str, Any], eval_result: Optional[Dict[str, Any]] = None) -> str:
+def _realtime_phase_directive(
+    state: Dict[str, Any],
+    context: Dict[str, Any],
+    eval_result: Optional[Dict[str, Any]] = None,
+) -> str:
     phase = state.get("current_phase", "GREETING")
+    curriculum_anchor = json.dumps({
+        "lesson_topic": context.get("lesson_topic"),
+        "ai_script": context.get("ai_script"),
+        "examples": context.get("examples"),
+        "real_world_context": context.get("real_world_context"),
+    }, ensure_ascii=True)
     common = (
         f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
+        f"CURRICULUM_ANCHOR={curriculum_anchor}. "
+        "Every teaching sentence must be directly supported by this curriculum anchor. Silently check the topic "
+        "before speaking. Never introduce an unrelated concept, analogy, subject, activity, or vocabulary. If the "
+        "learner introduces an unrelated topic, answer briefly and immediately return to the anchored lesson topic. "
         "Keep the spoken turn concise and natural. "
     )
     directives = {
@@ -438,7 +453,7 @@ async def realtime_pedagogy_event(
         "pedagogical_state": state,
         "practice_ready": bool(state.get("practice_ready")),
         "delivery_token": state.get("pending_delivery_token") or None,
-        "phase_instruction": _realtime_phase_directive(state, eval_result),
+        "phase_instruction": _realtime_phase_directive(state, context, eval_result),
         "evaluation": eval_result,
     }
 
