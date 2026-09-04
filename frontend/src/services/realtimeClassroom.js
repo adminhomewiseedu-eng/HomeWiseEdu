@@ -62,7 +62,14 @@ export class RealtimeClassroom {
     this.pc.onsignalingstatechange = reportConnection;
 
     this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: {
+        echoCancellation: true,
+        // Realtime applies its own far-field noise reduction. Applying the
+        // browser filter as well can erase quiet or developing voices.
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1,
+      },
     });
     this.stream.getAudioTracks().forEach((track) => this.pc.addTrack(track, this.stream));
 

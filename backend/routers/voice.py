@@ -129,10 +129,14 @@ async def create_realtime_session(
         "audio": {
             "input": {
                 "transcription": {"model": "gpt-4o-mini-transcribe", "language": "en"},
-                "noise_reduction": {"type": "near_field"},
+                # Laptop microphones normally capture a learner from farther
+                # away than a headset. Preserve that speech before VAD runs.
+                "noise_reduction": {"type": "far_field"},
                 "turn_detection": {
                     "type": "semantic_vad",
-                    "eagerness": "auto",
+                    # Give children time to finish an answer and avoid cutting
+                    # off hesitant speech after the first short pause.
+                    "eagerness": "low",
                     "create_response": True,
                     "interrupt_response": True,
                 },
