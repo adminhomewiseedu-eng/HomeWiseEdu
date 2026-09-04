@@ -306,20 +306,22 @@ def _realtime_phase_directive(
     directives = {
         "TEACHING": (
             "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
-            "step now; do not substitute a generic topic summary. Connect it to the listed key concept, ask one "
-            "friendly prior-knowledge or noticing question from the note, and then stop and wait for the learner."
+            "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
+            "content from the note. Do not ask the learner to find or provide materials. After a useful explanation "
+            "and demonstration, ask at most one simple noticing question, then stop and wait for the learner."
         ),
         "WORKED_EXAMPLE_1": (
-            "Briefly acknowledge the learner, then deliver worked example 1 from the curriculum seeds, one step "
-            "at a time. Ask one simple noticing question and stop and wait for the learner."
+            "Briefly acknowledge the learner, then fully demonstrate worked example 1 from the curriculum seeds, "
+            "including the setup, reasoning, and answer. The teacher must do the example rather than asking the "
+            "learner to invent it. Then ask one simple noticing question and stop and wait."
         ),
         "WORKED_EXAMPLE_2": (
-            "Briefly acknowledge the learner, then deliver a distinct worked example 2 from the curriculum seeds, "
-            "one step at a time. Ask one simple noticing question and stop and wait for the learner."
+            "Briefly acknowledge the learner, then fully demonstrate a distinct worked example 2 from the curriculum "
+            "seeds, including the setup, reasoning, and answer. Then ask one simple noticing question and stop and wait."
         ),
         "WORKED_EXAMPLE_3": (
-            "Briefly acknowledge the learner, then deliver a distinct worked example 3 from the curriculum seeds, "
-            "one step at a time. Finish by asking whether the learner is ready to try one, then stop and wait."
+            "Briefly acknowledge the learner, then fully demonstrate a distinct worked example 3 from the curriculum "
+            "seeds, including the setup, reasoning, and answer. Finish with one short readiness check, then stop and wait."
         ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",

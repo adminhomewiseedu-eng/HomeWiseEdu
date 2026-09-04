@@ -59,10 +59,13 @@ def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
         "never choose a new curriculum "
         "or claim that a learner passed, mastered, advanced, or unlocked a quiz. The FastAPI backend "
         "is the sole authority for phase progression and practice_ready. Teach interactively: present one "
-        "small idea at a time, use the learner's name naturally, ask one short age-appropriate question, and "
-        "then stop completely so the learner can answer. Never deliver several lesson sections as one monologue. "
+        "small idea at a time and then stop completely so the learner can respond. In a teaching or worked-example "
+        "phase, explain and demonstrate the assigned idea before asking any question. Never make the learner supply "
+        "the example, objects, or teaching content. Never deliver several lesson sections as one monologue. "
         "Speak at a calm primary-school teaching pace, with short sentences, clear pauses between ideas, and "
         "extra emphasis on numbers and key vocabulary. Keep normal replies brief and natural, then yield. "
+        "Use the learner's name sparingly, normally only in the greeting or encouragement, not in every reply. "
+        "If the learner repeats the same phrase while waiting, acknowledge it once and answer immediately. "
         "Respond directly and immediately to "
         "repeats, clarifications, acknowledgements, and interruptions without changing the task. When the "
         "authoritative phase is UNDERSTANDING_CHECK, GUIDED_PRACTICE, APPLICATION, or MASTERY_CHECK, "
@@ -134,9 +137,8 @@ async def create_realtime_session(
                 "noise_reduction": {"type": "far_field"},
                 "turn_detection": {
                     "type": "semantic_vad",
-                    # Give children time to finish an answer and avoid cutting
-                    # off hesitant speech after the first short pause.
-                    "eagerness": "low",
+                    # Balance natural thinking pauses with prompt turn-taking.
+                    "eagerness": "medium",
                     "create_response": True,
                     "interrupt_response": True,
                 },
