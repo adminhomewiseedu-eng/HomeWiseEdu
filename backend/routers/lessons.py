@@ -103,7 +103,9 @@ def advance_pedagogical_state(
     # reports completion with its server-issued delivery token.
     if event_type == "teacher_delivery_completed":
         delivered = dict(state.get("worked_examples_delivered") or {"1": False, "2": False, "3": False})
-        if phase == "TEACHING":
+        if phase == "GREETING":
+            state["current_phase"] = "TEACHING"
+        elif phase == "TEACHING":
             state["current_phase"] = "WORKED_EXAMPLE_1"
         elif phase == "WORKED_EXAMPLE_1":
             delivered["1"] = True
@@ -260,7 +262,7 @@ class RealtimePedagogyEvent(BaseModel):
 
 
 ACADEMIC_PHASES = {"UNDERSTANDING_CHECK", "GUIDED_PRACTICE", "APPLICATION", "MASTERY_CHECK"}
-TEACHER_DELIVERY_PHASES = {"TEACHING", "WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "LESSON_SUMMARY"}
+TEACHER_DELIVERY_PHASES = {"GREETING", "TEACHING", "WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "LESSON_SUMMARY"}
 
 
 def _lesson_context(lesson, active_day, child) -> Dict[str, Any]:
@@ -296,8 +298,14 @@ def _realtime_phase_directive(
         "examples": context.get("examples"),
         "real_world_context": context.get("real_world_context"),
     }, ensure_ascii=True)
+    examples = context.get("examples") or []
+    example_one = json.dumps(examples[0], ensure_ascii=True) if len(examples) > 0 else "the first curriculum example"
+    example_two = json.dumps(examples[1], ensure_ascii=True) if len(examples) > 1 else "the second curriculum example"
+    example_three = json.dumps(examples[2], ensure_ascii=True) if len(examples) > 2 else "the third curriculum example"
     common = (
         f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
+        f"The learner's name is {context.get('student_name', 'Student')}. Address the learner by name naturally "
+        "in the greeting and regularly in encouragement or transitions, without repeating it in every sentence. "
         f"CURRICULUM_ANCHOR={curriculum_anchor}. "
         "Speak natural UK English only. Never switch language or translate, even if the learner's audio is unclear "
         "or appears to contain another language. "
@@ -307,6 +315,11 @@ def _realtime_phase_directive(
         "Keep the spoken turn concise and natural. "
     )
     directives = {
+        "GREETING": (
+            f"Warmly welcome {context.get('student_name', 'the learner')} by name as their teacher, Ms. Ade. "
+            f"Say that you are happy they are here, introduce today's exact topic—{context.get('lesson_topic')}—"
+            "in one inviting sentence, and ask if they are ready to begin. Do not start an example yet."
+        ),
         "TEACHING": (
             "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
             "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
@@ -314,17 +327,17 @@ def _realtime_phase_directive(
             "and demonstration, ask at most one simple noticing question, then stop and wait for the learner."
         ),
         "WORKED_EXAMPLE_1": (
-            "Briefly acknowledge the learner, then fully demonstrate worked example 1 from the curriculum seeds, "
-            "including the setup, reasoning, and answer. The teacher must do the example rather than asking the "
+            f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_one}. "
+            "Include the setup, reasoning, and answer. The teacher must do the example rather than asking the "
             "learner to invent it. Then ask one simple noticing question and stop and wait."
         ),
         "WORKED_EXAMPLE_2": (
-            "Briefly acknowledge the learner, then fully demonstrate a distinct worked example 2 from the curriculum "
-            "seeds, including the setup, reasoning, and answer. Then ask one simple noticing question and stop and wait."
+            f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_two}. "
+            "Include the setup, reasoning, and answer. Then ask one simple noticing question and stop and wait."
         ),
         "WORKED_EXAMPLE_3": (
-            "Briefly acknowledge the learner, then fully demonstrate a distinct worked example 3 from the curriculum "
-            "seeds, including the setup, reasoning, and answer. Finish with one short readiness check, then stop and wait."
+            f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_three}. "
+            "Include the setup, reasoning, and answer. Finish with one short readiness check, then stop and wait."
         ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",
@@ -376,8 +389,6 @@ async def realtime_pedagogy_event(
     if payload.event_type == "start_class":
         if not state:
             state = advance_pedagogical_state(None, None, is_opening_turn=True)
-        if state.get("current_phase") == "GREETING":
-            state = advance_pedagogical_state(state, "start class", context=context)
     elif payload.event_type == "teacher_delivery_completed":
         if state.get("current_phase") not in TEACHER_DELIVERY_PHASES:
             raise HTTPException(status_code=409, detail="No teacher delivery is awaiting completion")
@@ -454,11 +465,18 @@ async def realtime_pedagogy_event(
         session.is_completed = bool(state.get("practice_ready"))
     db.commit()
 
+    phase_instruction = _realtime_phase_directive(state, context, eval_result)
+    if payload.event_type == "start_class" and state.get("current_phase") != "GREETING":
+        phase_instruction = (
+            f"First warmly welcome {child.name} back by name and say you are glad they are here. Then "
+            + phase_instruction
+        )
+
     return {
         "pedagogical_state": state,
         "practice_ready": bool(state.get("practice_ready")),
         "delivery_token": state.get("pending_delivery_token") or None,
-        "phase_instruction": _realtime_phase_directive(state, context, eval_result),
+        "phase_instruction": phase_instruction,
         "evaluation": eval_result,
     }
 

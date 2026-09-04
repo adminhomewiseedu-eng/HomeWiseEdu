@@ -443,12 +443,18 @@ export default function LessonPlayerScreen({
   }, [child, lessonId, dayNumber]);
 
   const realtimeResponseTag = (state, fallback = 'academic_prompt') => (
-    ['TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY']
+    ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY']
       .includes(state?.current_phase) ? 'teacher_delivery' : fallback
   );
 
   const handleStartClass = async () => {
     if (!lesson || hasStartedVoice) return;
+    // Invalidate late REST/TTS work and silence every provider before opening
+    // the single authoritative Realtime voice.
+    guidanceRequestRef.current += 1;
+    realtimeRef.current?.close();
+    realtimeRef.current = null;
+    stopAllAudioAndMic();
     ensureAudioContext();
     setHasStartedVoice(true);
     isVoicePausedRef.current = false;
@@ -538,7 +544,7 @@ export default function LessonPlayerScreen({
           }
           realtimeEventInFlightRef.current = true;
           try {
-            const teacherDeliveryPhases = ['TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
+            const teacherDeliveryPhases = ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
             const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
               && Boolean(realtimeDeliveryTokenRef.current);
             const deliveryToken = responseTag === 'teacher_delivery' || isAuthoritativeTeacherDelivery
@@ -630,6 +636,7 @@ export default function LessonPlayerScreen({
   };
 
   const handleEndClass = () => {
+    guidanceRequestRef.current += 1;
     isVoicePausedRef.current = true;
     setIsVoicePaused(true);
     realtimeRef.current?.close();

@@ -87,3 +87,12 @@ it('returns tool output to the same realtime conversation and starts tagged audi
   realtime.handleEvent({ type: 'response.created', response: { id: 'response-2' } });
   assert.equal(realtime.responseTag, 'academic_feedback');
 });
+
+it('stops remote teacher audio when the realtime classroom closes', () => {
+  let paused = 0;
+  const realtime = new RealtimeClassroom();
+  realtime.audio = { pause: () => { paused += 1; }, srcObject: {} };
+  realtime.close();
+  assert.equal(paused, 1);
+  assert.equal(realtime.audio, null);
+});

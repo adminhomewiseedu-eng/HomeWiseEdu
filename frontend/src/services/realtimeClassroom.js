@@ -223,7 +223,10 @@ export class RealtimeClassroom {
     this.dc?.close();
     this.pc?.close();
     this.stream?.getTracks().forEach((track) => track.stop());
-    if (this.audio) this.audio.srcObject = null;
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.srcObject = null;
+    }
     this.dc = null;
     this.pc = null;
     this.stream = null;

@@ -47,13 +47,14 @@ def test_realtime_delivery_tokens_enforce_all_three_worked_examples():
     started = event(headers, child_id, "start_class")
     assert started.status_code == 200, started.text
     data = started.json()
-    assert data["pedagogical_state"]["current_phase"] == "TEACHING"
+    assert data["pedagogical_state"]["current_phase"] == "GREETING"
+    assert "Realtime Child" in data["phase_instruction"]
     assert data["delivery_token"]
 
     stale = event(headers, child_id, "teacher_delivery_completed", delivery_token="wrong")
     assert stale.status_code == 409
 
-    for expected_phase in ["WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "UNDERSTANDING_CHECK"]:
+    for expected_phase in ["TEACHING", "WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "UNDERSTANDING_CHECK"]:
         completed = event(
             headers,
             child_id,
@@ -73,7 +74,7 @@ def test_realtime_clarification_preserves_active_question_without_evaluation():
     child_id, headers = parent_and_child("clarification")
     started = event(headers, child_id, "start_class").json()
     data = started
-    for _ in range(4):
+    for _ in range(5):
         data = event(
             headers,
             child_id,
@@ -163,4 +164,3 @@ def test_realtime_event_enforces_child_ownership_and_day_isolation():
         assert db.query(LessonSession).filter_by(child_id=child_a, lesson_id=1).count() == 2
     finally:
         db.close()
-
