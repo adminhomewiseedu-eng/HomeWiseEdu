@@ -83,6 +83,7 @@ def test_teacher_delivery_ends_with_an_explicit_named_handoff_question():
     assert teaching["pedagogical_state"]["current_phase"] == "TEACHING"
     assert "Realtime Child, what did you notice in that step?" in teaching["phase_instruction"]
     assert "Do not end with 'let's try'" in teaching["phase_instruction"]
+    assert "Never produce a standalone acknowledgement" in teaching["phase_instruction"]
 
 
 def test_realtime_clarification_preserves_active_question_without_evaluation():
