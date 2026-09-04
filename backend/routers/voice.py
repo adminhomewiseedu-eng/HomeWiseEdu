@@ -13,6 +13,7 @@ from ..services.openai_service import generate_openai_speech_audio
 from ..services.elevenlabs_service import generate_speech_audio
 from ..models import User, Lesson, LessonSession
 from .auth import get_current_user, authorize_child
+from ..utils.lesson_content import authored_worked_examples
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
         "objectives": (active_day.learning_objectives if active_day else None) or lesson.objectives or [],
         "key_concept": (active_day.key_concept if active_day else None) or lesson.learn_content or "",
         "teaching_script": active_day.ai_script if active_day else "",
-        "worked_example_seeds": (active_day.practice_questions if active_day else None) or lesson.examples or [],
+        "worked_example_seeds": authored_worked_examples(lesson, active_day),
         "real_world_context": active_day.real_world_context if active_day else "",
     }
     active_state = state or {"current_phase": "GREETING", "practice_ready": False}

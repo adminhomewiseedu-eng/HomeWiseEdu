@@ -11,6 +11,7 @@ from ..schemas import AITutorChatRequest, AITutorChatResponse, QuizSubmission, Q
 from ..services.openai_service import get_tutor_response, is_legacy_or_markdown_heavy, evaluate_academic_response
 from ..utils.levels import get_level_label
 from .auth import get_current_user, authorize_child
+from ..utils.lesson_content import authored_worked_examples
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 
@@ -278,7 +279,7 @@ def _lesson_context(lesson, active_day, child) -> Dict[str, Any]:
         "learning_objectives": (active_day.learning_objectives if active_day else None) or lesson.objectives or [],
         "key_concept": (active_day.key_concept if active_day else None) or lesson.learn_content or "",
         "ai_script": active_day.ai_script if active_day else "",
-        "examples": (active_day.practice_questions if active_day and active_day.practice_questions else lesson.examples) or [],
+        "examples": authored_worked_examples(lesson, active_day),
         "real_world_context": (active_day.real_world_context if active_day else None) or "Use an age-appropriate everyday example.",
     }
 
@@ -537,7 +538,7 @@ async def tutor_chat_guidance(
         "origin_of_knowledge": active_day.origin_of_knowledge if active_day else "",
         "video_url": active_day.video_url if active_day else "",
         "practice_questions": active_day.practice_questions if active_day else [],
-        "examples": (active_day.practice_questions if active_day and active_day.practice_questions else lesson.examples) or [],
+        "examples": authored_worked_examples(lesson, active_day),
         "real_world_context": real_world_context,
         "vocabulary": (active_day.vocabulary if active_day and active_day.vocabulary else lesson.vocabulary) or [],
         "reading_recommendations": active_day.reading_recommendations if active_day else [],

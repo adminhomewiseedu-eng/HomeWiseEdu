@@ -110,6 +110,7 @@ class LessonDayOut(BaseModel):
     origin_of_knowledge: Optional[str] = None
     video_url: Optional[str] = None
     practice_questions: Optional[List[Any]] = []
+    worked_examples: Optional[List[Any]] = []
     vocabulary: Optional[List[Any]] = []
     reading_recommendations: Optional[List[str]] = []
     status: Optional[str] = "active"

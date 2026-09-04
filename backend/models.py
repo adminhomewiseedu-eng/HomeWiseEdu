@@ -159,6 +159,11 @@ class LessonDay(Base):
 
     lesson = relationship("Lesson", back_populates="days")
 
+    @property
+    def worked_examples(self):
+        from .utils.lesson_content import authored_worked_examples
+        return authored_worked_examples(self.lesson, self)
+
 
 class LessonSession(Base):
     """Lightweight resumable lesson session tracking student's active position and chat history."""

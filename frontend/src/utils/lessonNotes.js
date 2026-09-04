@@ -21,13 +21,12 @@ export function buildLessonNotes(lesson, activeDay, conversationMessages = []) {
     .filter(Boolean)
     .map((text) => ({ question: text, deliveredByTutor: true }));
 
-  const curriculumExamples = asList(lesson?.examples);
+  const curriculumExamples = asList(activeDay?.worked_examples?.length ? activeDay.worked_examples : lesson?.examples);
 
   return {
     teachingNote: messageForPhase('TEACHING'),
-    workedExamples: deliveredExamples.length > 0 ? deliveredExamples : curriculumExamples,
+    workedExamples: curriculumExamples.length > 0 ? curriculumExamples : deliveredExamples,
     practiceQuestions: asList(activeDay?.practice_questions),
     lessonSummary: messageForPhase('LESSON_SUMMARY'),
   };
 }
-

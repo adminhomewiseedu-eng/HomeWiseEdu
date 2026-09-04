@@ -13,6 +13,24 @@ test('keeps curriculum practice prompts separate from worked examples', () => {
   assert.deepEqual(notes.practiceQuestions, ['Explain counting to five.']);
 });
 
+test('uses the API-authored day example plan as the written note source', () => {
+  const notes = buildLessonNotes(
+    { examples: [] },
+    {
+      worked_examples: ['Count five cubes.', 'Count five fingers.', 'Match five cards to five objects.'],
+      practice_questions: ['How many objects are there?'],
+    },
+    [{ sender: 'tutor', phase: 'WORKED_EXAMPLE_1', text: 'An improvised transcript.' }]
+  );
+
+  assert.deepEqual(notes.workedExamples, [
+    'Count five cubes.',
+    'Count five fingers.',
+    'Match five cards to five objects.',
+  ]);
+  assert.deepEqual(notes.practiceQuestions, ['How many objects are there?']);
+});
+
 test('collects one persisted tutor response for each worked-example phase', () => {
   const notes = buildLessonNotes(
     { examples: [{ title: 'Blueprint example' }] },
@@ -45,4 +63,3 @@ test('uses the newest response when a pedagogical phase is repeated', () => {
   assert.equal(notes.teachingNote, 'Clarified teaching');
   assert.equal(notes.lessonSummary, 'Final summary');
 });
-
