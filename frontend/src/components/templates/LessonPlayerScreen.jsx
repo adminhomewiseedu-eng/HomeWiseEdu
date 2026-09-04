@@ -6,6 +6,7 @@ import { RealtimeClassroom } from '../../services/realtimeClassroom';
 import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
 import { adaptiveSilenceMs, isStableBargeCandidate, looksLikeTeacherEcho } from '../../utils/voiceTurn';
+import { teacherDeliveryLooksComplete } from '../../utils/teacherDelivery';
 
 export default function LessonPlayerScreen({
   lessonId = 1,
@@ -53,6 +54,7 @@ export default function LessonPlayerScreen({
   const realtimeDeliveryTokenRef = useRef(null);
   const lastRealtimeStudentTranscriptRef = useRef('');
   const realtimeEventInFlightRef = useRef(false);
+  const realtimePhaseInstructionRef = useRef('');
   const transcriptHandlerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -424,6 +426,7 @@ export default function LessonPlayerScreen({
     const state = data.pedagogical_state || {};
     realtimeStateRef.current = state;
     realtimeDeliveryTokenRef.current = data.delivery_token || null;
+    realtimePhaseInstructionRef.current = data.phase_instruction || '';
     setPracticeReady(data.practice_ready === true);
     if (realtime?.connected) {
       realtime.updateInstructions(
@@ -547,6 +550,13 @@ export default function LessonPlayerScreen({
             const teacherDeliveryPhases = ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
             const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
               && Boolean(realtimeDeliveryTokenRef.current);
+            if (isAuthoritativeTeacherDelivery && !teacherDeliveryLooksComplete(completedPhase, transcript)) {
+              realtime.createResponse(
+                `${realtimePhaseInstructionRef.current}\nYour previous turn was only an acknowledgement or ended before the required phase content and direct question. Continue the same phase now. Do not repeat the acknowledgement and do not ask whether the learner is ready.`,
+                'teacher_delivery',
+              );
+              return;
+            }
             const deliveryToken = responseTag === 'teacher_delivery' || isAuthoritativeTeacherDelivery
               ? realtimeDeliveryTokenRef.current
               : null;
