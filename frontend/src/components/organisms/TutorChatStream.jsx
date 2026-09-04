@@ -54,7 +54,7 @@ export default function TutorChatStream({ messages = [], isGenerating = false, o
         <div className="msg tutor thinking">
           <div className="mav">👩🏾‍🏫</div>
           <div className="mbub tutor">
-            <span className="typing-dots">Ms. Ade is thinking</span>
+            <span className="typing-dots" aria-hidden="true">•••</span>
           </div>
         </div>
       )}

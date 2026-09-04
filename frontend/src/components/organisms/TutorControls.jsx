@@ -85,15 +85,15 @@ export default function TutorControls({
           type="button"
           className={`mic-btn ${isRecording ? 'recording' : ''}`}
           onClick={handleMicToggle}
-          title={isRecording ? "Listening to your voice... (click to stop)" : "Click to speak with Ms. Ade (interrupts speech)"}
+          aria-label={isRecording ? 'Stop microphone' : 'Use microphone'}
         >
-          {isRecording ? '🔴 Listening...' : '🎤 Speak'}
+          {isRecording ? '⏹️' : '🎤'}
         </button>
 
         <input
           type="text"
           className="tutor-text-input"
-          placeholder={isRecording ? "Listening to your voice..." : "Speak or type your answer to Ms. Ade..."}
+          placeholder="Type your answer to Ms. Ade..."
           value={inputText}
           onChange={(e) => {
             setInputText(e.target.value);

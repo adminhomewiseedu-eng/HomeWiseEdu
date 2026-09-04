@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function TutorHeader({ isSpeaking, onStopAudio, studentName = 'Student', status = null }) {
+export default function TutorHeader({ isSpeaking, onStopAudio, studentName = 'Student' }) {
   return (
     <div className="tutor-head">
       <div className={`tutor-av ${isSpeaking ? 'speaking' : ''}`}>
@@ -12,7 +12,6 @@ export default function TutorHeader({ isSpeaking, onStopAudio, studentName = 'St
           <div className={`wavebars ${isSpeaking ? 'on' : ''}`}>
             <i></i><i></i><i></i><i></i>
           </div>
-          <span>{status || (isSpeaking ? 'Speaking with you…' : 'Listening & Ready')}</span>
         </div>
       </div>
       {isSpeaking && onStopAudio && (

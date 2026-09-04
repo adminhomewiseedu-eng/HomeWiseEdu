@@ -214,7 +214,6 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
         <span className="quiz-voice-avatar">{isSpeaking ? '🗣️' : '👩🏾‍🏫'}</span>
         <div>
           <strong>Ms. Ade</strong>
-          <span>{isSpeaking ? 'Speaking to you…' : voiceFeedbackStatus}</span>
         </div>
       </div>
     </div>

@@ -739,7 +739,7 @@ export default function LessonPlayerScreen({
 
       {/* Elegant Floating Voice Tutor Status Bar & Live Radar Orb */}
       <div className={`floating-voice-bar ${voiceStatus} ${hasStartedVoice ? 'live-active' : ''}`}>
-        <div className="voice-bar-left" onClick={!hasStartedVoice ? handleStartClass : undefined} title={!hasStartedVoice ? 'Start the live class' : 'Live class active'}>
+        <div className="voice-bar-left" onClick={!hasStartedVoice ? handleStartClass : undefined} title={!hasStartedVoice ? 'Start the live class' : undefined}>
           <div className={`voice-avatar-orb ${voiceStatus}`}>
             👩🏾‍🏫
             {voiceStatus === 'speaking' && <span className="ring-pulse green" />}
@@ -748,19 +748,6 @@ export default function LessonPlayerScreen({
             {(voiceStatus === 'connecting' || voiceStatus === 'reconnecting') && <span className="ring-pulse amber" />}
           </div>
 
-          {!hasStartedVoice && <div className="voice-text-info">
-            <div className="voice-title">Ms. Ade · Live Voice Tutor</div>
-            <div className="voice-status-msg">
-              {voiceStatus === 'ready' && <span className="status-badge ready">Ready when you are · start the class and say hello</span>}
-              {voiceStatus === 'connecting' && <span className="status-badge connecting">Connecting microphone and Ms. Ade…</span>}
-              {voiceStatus === 'reconnecting' && <span className="status-badge reconnecting">Reconnecting listening…</span>}
-              {voiceStatus === 'paused' && (
-                <span className="status-badge paused">
-                  ⏸️ Voice tutor paused
-                </span>
-              )}
-            </div>
-          </div>}
         </div>
 
         {!hasStartedVoice && <div className="voice-bar-actions">
