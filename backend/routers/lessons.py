@@ -346,7 +346,7 @@ def _realtime_phase_directive(
         "WORKED_EXAMPLE_3": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_three}. "
             f"Include the setup, reasoning, and answer. You MUST end by asking: '{context.get('student_name', 'Student')}, "
-            "are you ready to try one with me?' Then stop and wait for the learner's answer."
+            "can you tell me the first step you would take in a similar example?' Then stop and wait for the learner's answer."
         ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",

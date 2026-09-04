@@ -16,6 +16,20 @@ test('rejects a vague readiness loop as completion of teaching', () => {
   );
 });
 
+test('rejects a long teaching turn that ends with only a vague invitation', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'TEACHING',
+    "We counted the five cubes slowly and carefully. We touched each imagined cube once, saying one, two, three, four, and five in the correct order. Now let's practise a few more times together?",
+  ), false);
+});
+
+test('accepts a complete teaching turn ending in a concrete counting task', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'TEACHING',
+    'We count each object once and keep the numbers in order. I counted one, two, three, four, five. That tells us there are five objects altogether. Juliet, can you count from one to five for me?',
+  ), true);
+});
+
 test('accepts a complete worked example with a direct handoff question', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'WORKED_EXAMPLE_1',
