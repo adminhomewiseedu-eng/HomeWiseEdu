@@ -289,10 +289,23 @@ def _realtime_phase_directive(state: Dict[str, Any], eval_result: Optional[Dict[
         "Keep the spoken turn concise and natural. "
     )
     directives = {
-        "TEACHING": "Greet the learner by name and teach the key concept briefly, then stop speaking.",
-        "WORKED_EXAMPLE_1": "Deliver worked example 1 step by step, then stop speaking.",
-        "WORKED_EXAMPLE_2": "Deliver a distinct worked example 2 step by step, then stop speaking.",
-        "WORKED_EXAMPLE_3": "Deliver a distinct worked example 3 step by step, then stop speaking.",
+        "TEACHING": (
+            "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
+            "step now; do not substitute a generic topic summary. Connect it to the listed key concept, ask one "
+            "friendly prior-knowledge or noticing question from the note, and then stop and wait for the learner."
+        ),
+        "WORKED_EXAMPLE_1": (
+            "Briefly acknowledge the learner, then deliver worked example 1 from the curriculum seeds, one step "
+            "at a time. Ask one simple noticing question and stop and wait for the learner."
+        ),
+        "WORKED_EXAMPLE_2": (
+            "Briefly acknowledge the learner, then deliver a distinct worked example 2 from the curriculum seeds, "
+            "one step at a time. Ask one simple noticing question and stop and wait for the learner."
+        ),
+        "WORKED_EXAMPLE_3": (
+            "Briefly acknowledge the learner, then deliver a distinct worked example 3 from the curriculum seeds, "
+            "one step at a time. Finish by asking whether the learner is ready to try one, then stop and wait."
+        ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",
         "APPLICATION": "Give one curriculum-grounded real-life application task and wait for the learner.",

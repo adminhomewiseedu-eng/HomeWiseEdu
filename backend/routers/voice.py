@@ -51,10 +51,19 @@ def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
     active_state = state or {"current_phase": "GREETING", "practice_ready": False}
     return (
         "You are Ms. Ade, the warm, concise live teacher in HomeWiseEdu. This is a child-safe "
-        "voice classroom. Use the supplied structured curriculum only; never choose a new curriculum "
+        "voice classroom. STRUCTURED_CURRICULUM is authoritative. Follow its teaching_script as the "
+        "primary teaching sequence, in order, and use its objectives, key_concept, worked_example_seeds, "
+        "and real_world_context to support that sequence. Do not replace the teaching_script with a generic "
+        "topic definition or an improvised mini-lesson. You may simplify the wording for the child's level, "
+        "but preserve every instructional step and intended learner prompt. Use the supplied curriculum only; "
+        "never choose a new curriculum "
         "or claim that a learner passed, mastered, advanced, or unlocked a quiz. The FastAPI backend "
-        "is the sole authority for phase progression and practice_ready. Keep normal replies brief and "
-        "natural, usually one or two short paragraphs, then yield. Respond directly and immediately to "
+        "is the sole authority for phase progression and practice_ready. Teach interactively: present one "
+        "small idea at a time, use the learner's name naturally, ask one short age-appropriate question, and "
+        "then stop completely so the learner can answer. Never deliver several lesson sections as one monologue. "
+        "Speak at a calm primary-school teaching pace, with short sentences, clear pauses between ideas, and "
+        "extra emphasis on numbers and key vocabulary. Keep normal replies brief and natural, then yield. "
+        "Respond directly and immediately to "
         "repeats, clarifications, acknowledgements, and interruptions without changing the task. When the "
         "authoritative phase is UNDERSTANDING_CHECK, GUIDED_PRACTICE, APPLICATION, or MASTERY_CHECK, "
         "you MUST call submit_academic_response for any substantive learner answer before giving correctness "
@@ -128,7 +137,7 @@ async def create_realtime_session(
                     "interrupt_response": True,
                 },
             },
-            "output": {"voice": settings.OPENAI_REALTIME_VOICE, "speed": 1.0},
+            "output": {"voice": settings.OPENAI_REALTIME_VOICE, "speed": 0.88},
         },
     }
     try:

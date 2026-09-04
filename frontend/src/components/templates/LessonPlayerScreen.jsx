@@ -517,7 +517,10 @@ export default function LessonPlayerScreen({
           }
           realtimeEventInFlightRef.current = true;
           try {
-            const deliveryToken = responseTag === 'teacher_delivery'
+            const teacherDeliveryPhases = ['TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
+            const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
+              && Boolean(realtimeDeliveryTokenRef.current);
+            const deliveryToken = responseTag === 'teacher_delivery' || isAuthoritativeTeacherDelivery
               ? realtimeDeliveryTokenRef.current
               : null;
             const data = await postRealtimeEvent({
@@ -528,12 +531,6 @@ export default function LessonPlayerScreen({
             });
             applyRealtimeAuthority(data, realtime);
             lastRealtimeStudentTranscriptRef.current = '';
-            if (deliveryToken && data.pedagogical_state?.current_phase !== 'PRACTICE_READY') {
-              realtime.createResponse(
-                data.phase_instruction,
-                realtimeResponseTag(data.pedagogical_state)
-              );
-            }
           } catch (error) {
             console.warn('Realtime state persistence failed safely:', error);
           } finally {
