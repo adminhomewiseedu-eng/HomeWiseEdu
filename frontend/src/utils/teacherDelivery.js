@@ -4,6 +4,10 @@ const QUESTION_PHASES = new Set([
   'WORKED_EXAMPLE_1',
   'WORKED_EXAMPLE_2',
   'WORKED_EXAMPLE_3',
+  'UNDERSTANDING_CHECK',
+  'GUIDED_PRACTICE',
+  'APPLICATION',
+  'MASTERY_CHECK',
 ]);
 
 const MINIMUM_WORDS = {
@@ -13,6 +17,10 @@ const MINIMUM_WORDS = {
   WORKED_EXAMPLE_2: 20,
   WORKED_EXAMPLE_3: 20,
   LESSON_SUMMARY: 12,
+  UNDERSTANDING_CHECK: 8,
+  GUIDED_PRACTICE: 8,
+  APPLICATION: 8,
+  MASTERY_CHECK: 8,
 };
 
 export function teacherDeliveryLooksComplete(phase, transcript) {

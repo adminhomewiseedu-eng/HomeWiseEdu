@@ -568,6 +568,15 @@ export default function LessonPlayerScreen({
               );
               return;
             }
+            if (academicPhases.includes(completedPhase)
+              && responseTag === 'academic_feedback'
+              && !teacherDeliveryLooksComplete(completedPhase, transcript)) {
+              realtime.createResponse(
+                `${realtimePhaseInstructionRef.current}\nYour previous response ended with a transition but did not deliver the current academic question or task. Ask the required concrete question now. Never stop after saying that you will move to the next step.`,
+                'academic_feedback',
+              );
+              return;
+            }
             const unsubmittedStudentResponse = String(lastRealtimeStudentTranscriptRef.current || '').trim();
             if (academicPhases.includes(completedPhase)
               && responseTag !== 'academic_feedback'

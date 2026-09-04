@@ -37,6 +37,20 @@ test('rejects teaching that sends the learner to find physical objects', () => {
   ), false);
 });
 
+test('rejects a transition-only response in an assessed phase', () => {
+  assert.equal(
+    teacherDeliveryLooksComplete('GUIDED_PRACTICE', "Excellent work, Juliet. Let's move to the next step now."),
+    false,
+  );
+});
+
+test('accepts an assessed phase only when it asks a concrete question', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'GUIDED_PRACTICE',
+    'Well done, Juliet. For the next step, imagine four counters and add one more. How many counters are there altogether?',
+  ), true);
+});
+
 test('accepts a complete worked example with a direct handoff question', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'WORKED_EXAMPLE_1',
