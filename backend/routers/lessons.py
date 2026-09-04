@@ -298,6 +298,8 @@ def _realtime_phase_directive(
     common = (
         f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
         f"CURRICULUM_ANCHOR={curriculum_anchor}. "
+        "Speak natural UK English only. Never switch language or translate, even if the learner's audio is unclear "
+        "or appears to contain another language. "
         "Every teaching sentence must be directly supported by this curriculum anchor. Silently check the topic "
         "before speaking. Never introduce an unrelated concept, analogy, subject, activity, or vocabulary. If the "
         "learner introduces an unrelated topic, answer briefly and immediately return to the anchored lesson topic. "
