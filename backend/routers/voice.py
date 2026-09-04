@@ -151,8 +151,10 @@ async def create_realtime_session(
                 "noise_reduction": {"type": "far_field"},
                 "turn_detection": {
                     "type": "semantic_vad",
-                    # Balance natural thinking pauses with prompt turn-taking.
-                    "eagerness": "medium",
+                    # Realtime can infer whether the learner's sentence is
+                    # complete. Prefer a prompt handoff over the 2-3 second
+                    # pause produced by medium eagerness.
+                    "eagerness": "high",
                     "create_response": True,
                     "interrupt_response": True,
                 },
