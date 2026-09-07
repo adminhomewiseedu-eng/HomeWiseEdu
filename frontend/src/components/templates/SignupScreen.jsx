@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AuthVisualSide from '../organisms/AuthVisualSide';
 import InputField from '../atoms/InputField';
 import Button from '../atoms/Button';
+import BrandLogo from '../molecules/BrandLogo';
 
 export default function SignupScreen({ onNavigate, onSignup }) {
   const [name, setName] = useState('');
@@ -27,10 +28,11 @@ export default function SignupScreen({ onNavigate, onSignup }) {
   return (
     <div className="screen active" id="signup">
       <div className="auth-wrap">
-        <AuthVisualSide onLogoClick={() => onNavigate('/')} />
+        <AuthVisualSide />
 
         <div className="auth-form-side">
           <div className="auth-card">
+            <div className="auth-form-logo"><BrandLogo onClick={() => onNavigate('/')} /></div>
             <h2>Create your account</h2>
             <p className="sub">Start your family's learning journey.</p>
 

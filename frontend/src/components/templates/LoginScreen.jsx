@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import AuthVisualSide from '../organisms/AuthVisualSide';
 import InputField from '../atoms/InputField';
 import Button from '../atoms/Button';
+import BrandLogo from '../molecules/BrandLogo';
 
 export default function LoginScreen({ onNavigate, onLogin }) {
   const [email, setEmail] = useState('');
@@ -29,15 +30,15 @@ export default function LoginScreen({ onNavigate, onLogin }) {
         <AuthVisualSide
           background="linear-gradient(150deg, var(--teal), var(--plum))"
           title="Welcome back."
-          subtitle="Your children's lessons are ready and waiting."
+          subtitle=""
           footerText=""
           blobBg1="var(--sky)"
           blobBg2="transparent"
-          onLogoClick={() => onNavigate('/')}
         />
 
         <div className="auth-form-side">
           <div className="auth-card">
+            <div className="auth-form-logo"><BrandLogo onClick={() => onNavigate('/')} /></div>
             <h2>Log in</h2>
             <p className="sub">Enter your credentials to continue.</p>
 
