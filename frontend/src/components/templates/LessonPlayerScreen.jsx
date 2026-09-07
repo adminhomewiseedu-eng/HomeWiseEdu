@@ -7,6 +7,7 @@ import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
 import { adaptiveSilenceMs, isStableBargeCandidate, looksLikeTeacherEcho } from '../../utils/voiceTurn';
 import { teacherDeliveryLooksComplete } from '../../utils/teacherDelivery';
+import BrandLogo from '../molecules/BrandLogo';
 
 export default function LessonPlayerScreen({
   lessonId = 1,
@@ -774,6 +775,7 @@ export default function LessonPlayerScreen({
         <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }} title="Back to Dashboard">
           ←
         </div>
+        <div className="lesson-brand"><BrandLogo onClick={onExit} /></div>
         <div>
           <div className="lb-title">{lesson.title}</div>
           <div className="lb-sub">
