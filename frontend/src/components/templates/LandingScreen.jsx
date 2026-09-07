@@ -18,7 +18,7 @@ export default function LandingScreen({ onNavigate, onStartLesson }) {
       {/* Topnav */}
       <div className="topnav">
         <div className="wrap">
-          <BrandLogo />
+          <BrandLogo variant="crest" />
           <div className="navlinks">
             <a onClick={() => scrollToId('features')}>Features</a>
             <a onClick={() => scrollToId('how')}>How it works</a>

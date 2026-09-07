@@ -39,7 +39,7 @@ a{ text-decoration:none; }
 .brand-logo-image{ display:block; object-fit:contain; object-position:center; }
 .brand-logo-full{ width:150px; height:auto; }
 .brand-logo-crest{ width:48px; height:auto; }
-.topnav .brand-logo-full{ width:156px; }
+.topnav .brand-logo-crest{ width:44px; max-height:58px; }
 .appbar .brand-logo-crest{ width:46px; max-height:54px; }
 footer .brand-logo-full{ width:180px; }
 .wrap{ max-width:1200px; margin:0 auto; padding:0 22px; }
@@ -111,7 +111,7 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 .auth-visual .blob{ position:absolute; border-radius:50%; opacity:.25; }
 .auth-form-side{ display:flex; align-items:center; justify-content:center; padding:40px; }
 .auth-card{ width:100%; max-width:410px; }
-.auth-form-logo{ display:flex; justify-content:flex-start; margin-bottom:18px; }
+.auth-form-logo{ display:flex; justify-content:center; margin-bottom:18px; }
 .auth-form-logo .brand-logo-full{ width:132px; }
 .auth-card h2{ font-size:32px; color:var(--plum); margin-bottom:6px; }
 .auth-card .sub{ color:var(--ink-soft); font-weight:600; margin-bottom:26px; }
