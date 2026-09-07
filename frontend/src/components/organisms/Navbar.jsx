@@ -20,7 +20,7 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
   return (
     <div className="appbar">
       <div className="wrap">
-        <BrandLogo onClick={handleLogoClick} />
+        <BrandLogo variant="crest" onClick={handleLogoClick} />
 
         <div className="appbar-right">
           {(normalized === 'student' || normalized === 'portfolio') && userRole === 'parent' && (

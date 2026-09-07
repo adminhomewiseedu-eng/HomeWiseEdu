@@ -98,7 +98,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
       <div className="app">
         <div className="appbar">
           <div className="wrap">
-            <BrandLogo onClick={() => onNavigate('/')} />
+            <BrandLogo variant="crest" onClick={() => onNavigate('/')} />
             <div className="appbar-right">
               <div className="plan-tag">✨ Premium trial</div>
               <div className="avatar-btn">{initial}</div>

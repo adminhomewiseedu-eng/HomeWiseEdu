@@ -775,7 +775,7 @@ export default function LessonPlayerScreen({
         <div className="exit" onClick={onExit} style={{ cursor: 'pointer' }} title="Back to Dashboard">
           ←
         </div>
-        <div className="lesson-brand"><BrandLogo onClick={onExit} /></div>
+        <div className="lesson-brand"><BrandLogo variant="crest" onClick={onExit} /></div>
         <div>
           <div className="lb-title">{lesson.title}</div>
           <div className="lb-sub">

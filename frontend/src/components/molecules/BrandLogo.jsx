@@ -1,6 +1,9 @@
 import React from 'react';
 
-export default function BrandLogo({ color = 'var(--plum)', onClick, style = {} }) {
+export default function BrandLogo({ color = 'var(--plum)', onClick, style = {}, variant = 'full' }) {
+  const isAdaptive = variant === 'adaptive';
+  const imageSrc = variant === 'crest' ? '/assets/homewiseedu-crest.png' : '/assets/homewiseedu-logo-full.png';
+
   return (
     <div
       className="logo"
@@ -13,11 +16,18 @@ export default function BrandLogo({ color = 'var(--plum)', onClick, style = {} }
       } : undefined}
       aria-label={onClick ? 'HomeWiseEdu home' : undefined}
     >
-      <img
-        className="brand-logo-image"
-        src="/assets/homewiseedu-logo.jpg"
-        alt="HomeWiseEdu — Family Under the Word"
-      />
+      {isAdaptive ? (
+        <>
+          <img className="brand-logo-image brand-logo-full" src="/assets/homewiseedu-logo-full.png" alt="HomeWiseEdu — Family Under the Word" />
+          <img className="brand-logo-image brand-logo-crest" src="/assets/homewiseedu-crest.png" alt="" aria-hidden="true" />
+        </>
+      ) : (
+        <img
+          className={`brand-logo-image brand-logo-${variant}`}
+          src={imageSrc}
+          alt={variant === 'crest' ? 'HomeWiseEdu' : 'HomeWiseEdu — Family Under the Word'}
+        />
+      )}
     </div>
   );
 }
