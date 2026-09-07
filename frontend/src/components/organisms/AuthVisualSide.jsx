@@ -7,9 +7,10 @@ export default function AuthVisualSide({
   footerText = 'Trusted by homeschooling families',
   blobBg1 = 'var(--sun)',
   blobBg2 = 'var(--coral)',
+  centerContent = false,
 }) {
   return (
-    <div className="auth-visual" style={{ background }}>
+    <div className={`auth-visual ${centerContent ? 'auth-visual-centered' : ''}`} style={{ background }}>
       <div className="blob" style={{ width: 300, height: 300, background: blobBg1, top: -60, right: -60 }} />
       <div className="blob" style={{ width: 200, height: 200, background: blobBg2, bottom: 40, left: -40 }} />
       <div style={{ position: 'relative', zIndex: 2 }}>

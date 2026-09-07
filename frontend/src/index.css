@@ -106,6 +106,8 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 /* ---------------- AUTH ---------------- */
 .auth-wrap{ min-height:100vh; display:grid; grid-template-columns:1fr 1fr; }
 .auth-visual{ background:linear-gradient(150deg,var(--grape),var(--plum-deep)); padding:56px; color:#fff; display:flex; flex-direction:column; justify-content:space-between; position:relative; overflow:hidden; }
+.auth-visual-centered{ justify-content:center; }
+.auth-visual-centered>div:last-child:empty{ display:none; }
 .auth-visual .blob{ position:absolute; border-radius:50%; opacity:.25; }
 .auth-form-side{ display:flex; align-items:center; justify-content:center; padding:40px; }
 .auth-card{ width:100%; max-width:410px; }

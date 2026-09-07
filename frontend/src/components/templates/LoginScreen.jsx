@@ -30,10 +30,11 @@ export default function LoginScreen({ onNavigate, onLogin }) {
         <AuthVisualSide
           background="linear-gradient(150deg, var(--teal), var(--plum))"
           title="Welcome back."
-          subtitle=""
+          subtitle="Your children's lessons are ready and waiting."
           footerText=""
           blobBg1="var(--sky)"
           blobBg2="transparent"
+          centerContent
         />
 
         <div className="auth-form-side">
