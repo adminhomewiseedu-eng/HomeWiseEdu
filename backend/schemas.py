@@ -55,6 +55,18 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: Dict[str, Any]
 
+class ParentProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    address_line_1: Optional[str] = None
+    address_line_2: Optional[str] = None
+    city: Optional[str] = None
+    state_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+
 # Subject schemas
 class SubjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

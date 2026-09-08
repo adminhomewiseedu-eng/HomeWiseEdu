@@ -146,6 +146,14 @@ export const parentAPI = {
   },
   removeProfileImage: (childId) => api.delete(`/api/parent/children/${childId}/profile-image`),
   getProfileImage: (childId) => api.get(`/api/parent/children/${childId}/profile-image`, { responseType: 'blob' }),
+  getProfile: () => api.get('/api/parent/profile'),
+  updateProfile: (payload) => api.patch('/api/parent/profile', payload),
+  uploadParentProfileImage: (image) => {
+    const form = new FormData();
+    form.append('image', image);
+    return api.post('/api/parent/profile/image', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  getParentProfileImage: () => api.get('/api/parent/profile/image', { responseType: 'blob' }),
   handleRecommendation: (recId, action) =>
     api.post(`/api/parent/recommendations/${recId}/action`, { action }),
 };

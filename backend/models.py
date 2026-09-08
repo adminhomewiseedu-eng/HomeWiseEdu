@@ -20,6 +20,27 @@ class User(Base):
     alerts = relationship("ParentAlert", back_populates="parent", cascade="all, delete-orphan")
     recommendations = relationship("AIRecommendation", back_populates="parent", cascade="all, delete-orphan")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+    parent_profile = relationship("ParentProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+class ParentProfile(Base):
+    __tablename__ = "parent_profiles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    address_line_1 = Column(String, nullable=True)
+    address_line_2 = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    state_region = Column(String, nullable=True)
+    postal_code = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    profile_image_name = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="parent_profile")
 
 
 class PasswordResetToken(Base):

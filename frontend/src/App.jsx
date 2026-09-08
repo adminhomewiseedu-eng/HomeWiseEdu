@@ -15,6 +15,7 @@ import EvidenceSubmitScreen from './components/templates/EvidenceSubmitScreen';
 import LessonCompleteScreen from './components/templates/LessonCompleteScreen';
 import PortfolioScreen from './components/templates/PortfolioScreen';
 import AdminDashboardScreen from './components/templates/AdminDashboardScreen';
+import ParentSettingsScreen from './components/templates/ParentSettingsScreen';
 import { useAuth } from './hooks/useAuth';
 import { authAPI, parentAPI } from './services/api';
 
@@ -119,6 +120,7 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordScreen onNavigate={go} />} />
         <Route path="/add-child" element={currentUser?.role === 'parent' ? <AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : '/login'} replace />} />
         <Route path="/parent" element={currentUser?.role === 'parent' ? <ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : currentUser?.role === 'admin' ? '/admin' : '/login'} replace />} />
+        <Route path="/parent/settings/profile" element={currentUser?.role === 'parent' ? <ParentSettingsScreen onNavigate={go} /> : <Navigate to="/login" replace />} />
         <Route path="/student" element={activeChild ? <StudentDashboardScreen child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/login' : '/parent'} replace />} />
         <Route path="/lesson" element={<LessonPlayerScreen lessonId={activeLessonId} dayNumber={activeDayNumber} activityType={activeActivityType} child={activeChild} onExit={() => go('/student')} onProceedToQuiz={(l) => { setCurrentLessonData(l); setActiveLessonId(l?.id || activeLessonId); go('/quiz'); }} />} />
         <Route path="/quiz" element={<QuizScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} onExit={() => go('/student')} onQuizComplete={(res) => { setQuizResultData(res); go('/submit'); }} />} />

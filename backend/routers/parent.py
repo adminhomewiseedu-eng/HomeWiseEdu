@@ -4,8 +4,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 from ..database import get_db
-from ..models import User, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject, Subject
-from ..schemas import RecommendationAction, ChildUpdate, StudentCredentialsUpdate
+from ..models import User, ParentProfile, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject, Subject
+from ..schemas import RecommendationAction, ChildUpdate, StudentCredentialsUpdate, ParentProfileUpdate
 from ..config import settings
 from ..services.storage_service import save_profile_image, delete_profile_image
 from ..utils.levels import get_level_label
@@ -13,6 +13,82 @@ from .auth import get_current_user, authorize_child, get_password_hash
 from typing import Optional
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
+
+
+def _require_parent(current_user: User) -> None:
+    if current_user.role != "parent":
+        raise HTTPException(status_code=403, detail="Parent access required")
+
+
+def _profile_payload(user: User, profile: ParentProfile | None) -> dict:
+    name_parts = (user.name or "").strip().split(maxsplit=1)
+    return {
+        "first_name": profile.first_name if profile and profile.first_name is not None else (name_parts[0] if name_parts else ""),
+        "last_name": profile.last_name if profile and profile.last_name is not None else (name_parts[1] if len(name_parts) > 1 else ""),
+        "email": user.email,
+        "phone_number": profile.phone_number if profile else None,
+        "address_line_1": profile.address_line_1 if profile else None,
+        "address_line_2": profile.address_line_2 if profile else None,
+        "city": profile.city if profile else None,
+        "state_region": profile.state_region if profile else None,
+        "postal_code": profile.postal_code if profile else None,
+        "country": profile.country if profile else None,
+        "profile_image_url": "/api/parent/profile/image" if profile and profile.profile_image_name else None,
+        "role": "Parent",
+        "joined_at": user.created_at,
+        "account_status": "Active",
+    }
+
+
+@router.get("/profile")
+def get_parent_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_parent(current_user)
+    return _profile_payload(current_user, current_user.parent_profile)
+
+
+@router.patch("/profile")
+def update_parent_profile(changes: ParentProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_parent(current_user)
+    profile = current_user.parent_profile or ParentProfile(user_id=current_user.id)
+    if not current_user.parent_profile:
+        db.add(profile)
+    values = changes.model_dump(exclude_unset=True)
+    for field, value in values.items():
+        setattr(profile, field, value.strip() if isinstance(value, str) else value)
+    first = profile.first_name or ""
+    last = profile.last_name or ""
+    if first or last:
+        current_user.name = " ".join(part for part in (first, last) if part).strip()
+        current_user.avatar = (first or last)[0].upper()
+    db.commit()
+    db.refresh(profile)
+    return _profile_payload(current_user, profile)
+
+
+@router.post("/profile/image")
+async def upload_parent_profile_image(image: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_parent(current_user)
+    profile = current_user.parent_profile or ParentProfile(user_id=current_user.id)
+    if not current_user.parent_profile:
+        db.add(profile)
+    old_name = profile.profile_image_name
+    profile.profile_image_name = await save_profile_image(image)
+    db.commit()
+    delete_profile_image(old_name)
+    return {"profile_image_url": "/api/parent/profile/image"}
+
+
+@router.get("/profile/image")
+def get_parent_profile_image(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_parent(current_user)
+    profile = current_user.parent_profile
+    if not profile or not profile.profile_image_name:
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    root = Path(settings.PROFILE_IMAGE_DIR).resolve()
+    target = (root / profile.profile_image_name).resolve()
+    if target.parent != root or not target.is_file():
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    return FileResponse(target)
 
 
 def _parent_owned_child(db: Session, current_user: User, child_id: int) -> Child:

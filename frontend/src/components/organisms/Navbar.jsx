@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import BrandLogo from '../molecules/BrandLogo';
 import ChildAvatar from '../atoms/ChildAvatar';
+import { Settings, LogOut } from 'lucide-react';
+import { parentAPI } from '../../services/api';
 
 export default function Navbar({ currentScreen, userRole, onNavigate, activeChild, currentUser, onLogout }) {
   const normalized = (currentScreen || '').replace('/', '');
@@ -8,6 +10,12 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
   if (isHidden || normalized.startsWith('admin')) return null;
 
   const initial = currentUser?.avatar || currentUser?.name?.[0]?.toUpperCase() || 'U';
+  const [parentImage, setParentImage] = useState(null);
+  useEffect(() => {
+    let url;
+    if (userRole === 'parent') parentAPI.getParentProfileImage().then(({ data }) => { url = URL.createObjectURL(data); setParentImage(url); }).catch(() => setParentImage(null));
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [userRole, normalized]);
 
   const handleLogoClick = () => {
     if (currentUser) {
@@ -20,7 +28,7 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
   return (
     <div className="appbar">
       <div className="wrap">
-        <BrandLogo variant="crest" onClick={handleLogoClick} />
+        <button className="parent-brand" onClick={handleLogoClick}><BrandLogo variant="crest" /><span>HomeWiseEdu</span></button>
 
         <div className="appbar-right">
           {(normalized === 'student' || normalized === 'portfolio') && userRole === 'parent' && (
@@ -29,13 +37,13 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
             </button>
           )}
 
-          {userRole === 'parent' && (
-            <div className="plan-tag">✨ Premium</div>
-          )}
+          {userRole === 'parent' && <button className="header-settings" onClick={() => onNavigate('/parent/settings/profile')}><Settings size={18}/><span>Settings</span></button>}
 
           {activeChild && normalized === 'student'
             ? <ChildAvatar className="avatar-btn" childId={activeChild.id} profileImageUrl={activeChild.profile_image_url} fallback={activeChild.avatar} style={{ cursor: 'pointer' }} onClick={onLogout} title="Log out" />
-            : <div className="avatar-btn" onClick={onLogout} title="Log out" style={{ cursor: 'pointer' }}>{initial}</div>}
+            : userRole === 'parent' ? <button className="parent-avatar-control" onClick={() => onNavigate('/parent/settings/profile')} title="Parent profile">{parentImage ? <img src={parentImage} alt="Parent profile"/> : initial}</button>
+            : <div className="avatar-btn">{initial}</div>}
+          <button className="header-logout" onClick={onLogout} title="Log out"><LogOut size={18}/><span>Log out</span></button>
         </div>
       </div>
     </div>
