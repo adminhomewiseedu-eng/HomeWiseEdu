@@ -13,11 +13,11 @@ export default function AuthVisualSide({
     <div className={`auth-visual ${centerContent ? 'auth-visual-centered' : ''}`} style={{ background }}>
       <div className="blob" style={{ width: 300, height: 300, background: blobBg1, top: -60, right: -60 }} />
       <div className="blob" style={{ width: 200, height: 200, background: blobBg2, bottom: 40, left: -40 }} />
-      <div style={{ position: 'relative', zIndex: 2 }}>
+      <div className="auth-visual-copy" style={{ position: 'relative', zIndex: 2 }}>
         <h1 style={{ fontSize: 36, lineHeight: 1.15, marginBottom: 14 }}>{title}</h1>
         {subtitle && <p style={{ fontSize: 16, fontWeight: 600, opacity: 0.85, lineHeight: 1.6 }}>{subtitle}</p>}
       </div>
-      <div style={{ position: 'relative', zIndex: 2, fontWeight: 700, opacity: 0.85 }}>
+      <div className="auth-visual-footer" style={{ position: 'relative', zIndex: 2, fontWeight: 700, opacity: 0.85 }}>
         {footerText}
       </div>
     </div>

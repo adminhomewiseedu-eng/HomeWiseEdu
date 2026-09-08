@@ -106,8 +106,9 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 /* ---------------- AUTH ---------------- */
 .auth-wrap{ min-height:100vh; display:grid; grid-template-columns:1fr 1fr; }
 .auth-visual{ background:linear-gradient(150deg,var(--grape),var(--plum-deep)); padding:56px; color:#fff; display:flex; flex-direction:column; justify-content:space-between; position:relative; overflow:hidden; }
-.auth-visual-centered{ justify-content:center; }
-.auth-visual-centered>div:last-child:empty{ display:none; }
+.auth-visual-centered .auth-visual-copy{ position:absolute!important; top:50%; left:56px; right:56px; transform:translateY(-50%); }
+.auth-visual-footer{ margin-top:auto; }
+.auth-visual-footer:empty{ display:none; }
 .auth-visual .blob{ position:absolute; border-radius:50%; opacity:.25; }
 .auth-form-side{ display:flex; align-items:center; justify-content:center; padding:40px; }
 .auth-card{ width:100%; max-width:410px; }
@@ -591,6 +592,8 @@ footer .wrap{ display:flex; justify-content:space-between; align-items:center; f
 
 @media(max-width:960px){
   .hero-grid,.auth-wrap,.feature-grid,.steps-grid,.grid-2,.grid-3,.pricing-grid,.stat-row,.stat-row-admin{ grid-template-columns:1fr; }
+  .auth-visual{ min-height:360px; padding:40px 32px; }
+  .auth-visual-centered .auth-visual-copy{ left:32px; right:32px; }
   .hero h1{ font-size:38px; } .navlinks{ display:none; } .admin-shell{ grid-template-columns:1fr; } .sidebar{ display:none; }
   .lesson-body{ flex-direction:column; } .doc-side,.tutor-side{ flex:1 1 auto; }
 }

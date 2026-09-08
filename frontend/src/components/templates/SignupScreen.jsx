@@ -28,7 +28,7 @@ export default function SignupScreen({ onNavigate, onSignup }) {
   return (
     <div className="screen active" id="signup">
       <div className="auth-wrap">
-        <AuthVisualSide />
+        <AuthVisualSide centerContent />
 
         <div className="auth-form-side">
           <div className="auth-card">
