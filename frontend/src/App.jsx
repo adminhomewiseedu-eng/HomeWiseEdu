@@ -16,13 +16,15 @@ import LessonCompleteScreen from './components/templates/LessonCompleteScreen';
 import PortfolioScreen from './components/templates/PortfolioScreen';
 import AdminDashboardScreen from './components/templates/AdminDashboardScreen';
 import ParentSettingsScreen from './components/templates/ParentSettingsScreen';
+import ParentProfileScreen from './components/templates/ParentProfileScreen';
 import { useAuth } from './hooks/useAuth';
 import { authAPI, parentAPI } from './services/api';
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, login, register, logout } = useAuth();
+  const { currentUser, setCurrentUser, login, register, logout } = useAuth();
+  const [parentProfileRevision, setParentProfileRevision] = useState(0);
   const [activeChild, setActiveChild] = useState(() => {
     try {
       const saved = localStorage.getItem('activeChild');
@@ -111,7 +113,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <Navbar currentScreen={currentPath} userRole={userRole} onNavigate={go} activeChild={activeChild} currentUser={currentUser} onLogout={handleLogout} />
+      <Navbar currentScreen={currentPath} userRole={userRole} onNavigate={go} activeChild={activeChild} currentUser={currentUser} onLogout={handleLogout} parentProfileRevision={parentProfileRevision} />
       <Routes>
         <Route path="/" element={<LandingScreen onNavigate={go} onStartLesson={() => go('/login')} />} />
         <Route path="/signup" element={<SignupScreen onNavigate={go} onSignup={handleSignup} />} />
@@ -120,7 +122,8 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPasswordScreen onNavigate={go} />} />
         <Route path="/add-child" element={currentUser?.role === 'parent' ? <AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : '/login'} replace />} />
         <Route path="/parent" element={currentUser?.role === 'parent' ? <ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : currentUser?.role === 'admin' ? '/admin' : '/login'} replace />} />
-        <Route path="/parent/settings/profile" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="profile" onNavigate={go} /> : <Navigate to="/login" replace />} />
+        <Route path="/parent/profile" element={currentUser?.role === 'parent' ? <ParentProfileScreen onNavigate={go} profileRevision={parentProfileRevision} /> : <Navigate to="/login" replace />} />
+        <Route path="/parent/settings/profile" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="profile" onNavigate={go} onProfileUpdated={(profile) => { setCurrentUser({ ...currentUser, name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || currentUser.name }); setParentProfileRevision((value) => value + 1); }} /> : <Navigate to="/login" replace />} />
         <Route path="/parent/settings/account" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="account" onNavigate={go} /> : <Navigate to="/login" replace />} />
         <Route path="/parent/settings/security" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="security" onNavigate={go} /> : <Navigate to="/login" replace />} />
         <Route path="/student" element={activeChild ? <StudentDashboardScreen child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/login' : '/parent'} replace />} />
