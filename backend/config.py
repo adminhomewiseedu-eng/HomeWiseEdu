@@ -39,6 +39,8 @@ class Settings(BaseModel):
     PASSWORD_RESET_RATE_LIMIT: int = int(os.getenv("PASSWORD_RESET_RATE_LIMIT", "5"))
     PASSWORD_RESET_RATE_WINDOW_SECONDS: int = int(os.getenv("PASSWORD_RESET_RATE_WINDOW_SECONDS", "900"))
     PASSWORD_RESET_DEV_MODE: bool = os.getenv("PASSWORD_RESET_DEV_MODE", "false").lower() in {"1", "true", "yes"}
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    PASSWORD_RESET_FROM_EMAIL: str = os.getenv("PASSWORD_RESET_FROM_EMAIL", "")
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
@@ -114,7 +116,7 @@ def validate_production_settings(candidate: Settings) -> None:
     missing = [name for name in (
         "DATABASE_URL", "SECRET_KEY", "OPENAI_API_KEY", "OPENAI_MODEL",
         "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ALLOWED_ORIGINS", "STORAGE_ROOT",
-        "FRONTEND_URL", "SMTP_HOST", "SMTP_FROM_EMAIL",
+        "FRONTEND_URL",
     ) if not getattr(candidate, name, "")]
     if missing:
         raise RuntimeError("Missing required production variables: " + ", ".join(missing))
@@ -122,6 +124,10 @@ def validate_production_settings(candidate: Settings) -> None:
         raise RuntimeError("Production SECRET_KEY must contain at least 32 characters")
     if candidate.PASSWORD_RESET_DEV_MODE:
         raise RuntimeError("PASSWORD_RESET_DEV_MODE cannot be enabled in production")
+    if not (candidate.RESEND_API_KEY and candidate.PASSWORD_RESET_FROM_EMAIL) and not (
+        candidate.SMTP_HOST and candidate.SMTP_FROM_EMAIL
+    ):
+        raise RuntimeError("Production password reset email delivery must be configured")
     if candidate.PASSWORD_RESET_EXPIRE_MINUTES < 1:
         raise RuntimeError("PASSWORD_RESET_EXPIRE_MINUTES must be positive")
     if bool(candidate.SMTP_USERNAME) != bool(candidate.SMTP_PASSWORD):

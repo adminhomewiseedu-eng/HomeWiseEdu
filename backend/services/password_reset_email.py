@@ -3,6 +3,8 @@ import smtplib
 from email.message import EmailMessage
 from html import escape
 
+import httpx
+
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -10,7 +12,9 @@ development_outbox = []
 
 
 def email_delivery_configured() -> bool:
-    return bool(settings.SMTP_HOST and settings.SMTP_FROM_EMAIL) or (
+    return bool(settings.RESEND_API_KEY and settings.PASSWORD_RESET_FROM_EMAIL) or bool(
+        settings.SMTP_HOST and settings.SMTP_FROM_EMAIL
+    ) or (
         settings.PASSWORD_RESET_DEV_MODE and not settings.is_production
     )
 
@@ -23,11 +27,8 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
         development_outbox.append({"recipient": recipient, "reset_url": reset_url})
         return True
 
-    message = EmailMessage()
-    message["Subject"] = "Reset your HomeWiseEdu password"
-    message["From"] = settings.SMTP_FROM_EMAIL
-    message["To"] = recipient
-    message.set_content(
+    subject = "Reset your HomeWiseEdu password"
+    plain_text = (
         "HomeWiseEdu password reset\n\n"
         "We received a request to reset the password for your HomeWiseEdu account.\n\n"
         f"Reset your password: {reset_url}\n\n"
@@ -36,8 +37,7 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
         "Need help? Contact support@homewiseedu.com."
     )
     safe_url = escape(reset_url, quote=True)
-    message.add_alternative(
-        f"""<!doctype html>
+    html = f"""<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#f8f4ee;font-family:Arial,sans-serif;color:#35104f;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f4ee;padding:32px 12px;">
@@ -56,9 +56,32 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
       </td></tr>
     </table>
   </body>
-</html>""",
-        subtype="html",
-    )
+</html>"""
+
+    if settings.RESEND_API_KEY and settings.PASSWORD_RESET_FROM_EMAIL:
+        try:
+            response = httpx.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={"from": settings.PASSWORD_RESET_FROM_EMAIL, "to": [recipient],
+                      "subject": subject, "text": plain_text, "html": html},
+                timeout=10,
+            )
+            response.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning("Password reset email delivery failed provider=resend type=%s", type(exc).__name__)
+            return False
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = settings.SMTP_FROM_EMAIL
+    message["To"] = recipient
+    message.set_content(plain_text)
+    message.add_alternative(html, subtype="html")
     try:
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as smtp:
             if settings.SMTP_USE_TLS:

@@ -46,7 +46,7 @@ def test_production_rejects_unsafe_cors(origins):
 
 
 def test_production_requires_password_reset_email_delivery():
-    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+    with pytest.raises(RuntimeError, match="password reset email delivery"):
         validate_production_settings(production_settings(SMTP_HOST=""))
 
 

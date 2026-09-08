@@ -154,3 +154,30 @@ def test_smtp_message_contains_html_and_plain_text_without_logging_token(monkeyp
     assert reset_url.replace("&", "&amp;") in html.get_content()
     assert "If you did not request this, you can ignore this email." in plain.get_content()
     assert "support@homewiseedu.com" in html.get_content()
+
+
+def test_resend_email_uses_https_api_and_precedes_smtp(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(settings, "PASSWORD_RESET_DEV_MODE", False)
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test_key")
+    monkeypatch.setattr(settings, "PASSWORD_RESET_FROM_EMAIL", "HomeWiseEdu <onboarding@resend.dev>")
+    monkeypatch.setattr(password_reset_email.httpx, "post", fake_post)
+
+    reset_url = "https://homewiseedu.com/reset-password?token=secret-token"
+    assert password_reset_email.send_password_reset_email("parent@example.com", reset_url) is True
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["headers"]["Authorization"] == "Bearer re_test_key"
+    assert captured["json"]["to"] == ["parent@example.com"]
+    assert captured["json"]["from"] == "HomeWiseEdu <onboarding@resend.dev>"
+    assert reset_url in captured["json"]["text"]
+    assert "Reset password" in captured["json"]["html"]
