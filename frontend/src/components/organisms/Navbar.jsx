@@ -4,7 +4,7 @@ import ChildAvatar from '../atoms/ChildAvatar';
 
 export default function Navbar({ currentScreen, userRole, onNavigate, activeChild, currentUser, onLogout }) {
   const normalized = (currentScreen || '').replace('/', '');
-  const isHidden = ['', 'landing', 'signup', 'login', 'add-child', 'addchild', 'lesson', 'quiz', 'submit', 'complete'].includes(normalized);
+  const isHidden = ['', 'landing', 'signup', 'login', 'forgot-password', 'reset-password', 'add-child', 'addchild', 'lesson', 'quiz', 'submit', 'complete'].includes(normalized);
   if (isHidden || normalized.startsWith('admin')) return null;
 
   const initial = currentUser?.avatar || currentUser?.name?.[0]?.toUpperCase() || 'U';

@@ -53,6 +53,10 @@ OPENAI_MODEL=gpt-4o-mini
 ELEVENLABS_API_KEY=your-elevenlabs-api-key
 ELEVENLABS_VOICE_ID=your-ms-ade-voice-id
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+FRONTEND_URL=http://localhost:3000
+PASSWORD_RESET_EXPIRE_MINUTES=45
+# Development-only reset-link capture; never enable in production.
+PASSWORD_RESET_DEV_MODE=true
 AUTO_INIT_DB=true
 SEED_MODE=demo
 ```
@@ -64,6 +68,8 @@ VITE_API_URL=http://127.0.0.1:8000
 ```
 
 Never place `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `SECRET_KEY` or `DATABASE_URL` in frontend variables. Environment files are excluded by `.gitignore` and must not be committed.
+
+Password-reset email delivery uses backend-only SMTP configuration: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and `SMTP_USE_TLS`. Production startup fails if SMTP delivery is absent, preventing a deployment from silently exposing a broken recovery flow. Local developers may temporarily enable `PASSWORD_RESET_DEV_MODE`; captured links remain in the backend process only and are never returned by the API or logged. Production rejects this setting.
 
 ## Run locally
 

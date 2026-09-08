@@ -34,6 +34,17 @@ class Settings(BaseModel):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    PASSWORD_RESET_EXPIRE_MINUTES: int = int(os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "45"))
+    PASSWORD_RESET_RATE_LIMIT: int = int(os.getenv("PASSWORD_RESET_RATE_LIMIT", "5"))
+    PASSWORD_RESET_RATE_WINDOW_SECONDS: int = int(os.getenv("PASSWORD_RESET_RATE_WINDOW_SECONDS", "900"))
+    PASSWORD_RESET_DEV_MODE: bool = os.getenv("PASSWORD_RESET_DEV_MODE", "false").lower() in {"1", "true", "yes"}
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "support@homewiseedu.com")
+    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes"}
     PORT: int = int(os.getenv("PORT", "8000"))
     ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -103,11 +114,23 @@ def validate_production_settings(candidate: Settings) -> None:
     missing = [name for name in (
         "DATABASE_URL", "SECRET_KEY", "OPENAI_API_KEY", "OPENAI_MODEL",
         "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ALLOWED_ORIGINS", "STORAGE_ROOT",
+        "FRONTEND_URL", "SMTP_HOST", "SMTP_FROM_EMAIL",
     ) if not getattr(candidate, name, "")]
     if missing:
         raise RuntimeError("Missing required production variables: " + ", ".join(missing))
     if len(candidate.SECRET_KEY) < 32:
         raise RuntimeError("Production SECRET_KEY must contain at least 32 characters")
+    if candidate.PASSWORD_RESET_DEV_MODE:
+        raise RuntimeError("PASSWORD_RESET_DEV_MODE cannot be enabled in production")
+    if candidate.PASSWORD_RESET_EXPIRE_MINUTES < 1:
+        raise RuntimeError("PASSWORD_RESET_EXPIRE_MINUTES must be positive")
+    if bool(candidate.SMTP_USERNAME) != bool(candidate.SMTP_PASSWORD):
+        raise RuntimeError("Production SMTP_USERNAME and SMTP_PASSWORD must be configured together")
+    if not 1 <= candidate.SMTP_PORT <= 65535:
+        raise RuntimeError("Production SMTP_PORT must be a valid TCP port")
+    frontend = urlparse(candidate.FRONTEND_URL)
+    if frontend.scheme != "https" or not frontend.netloc:
+        raise RuntimeError("Production FRONTEND_URL must be a public HTTPS origin")
     if not candidate.DATABASE_URL.startswith(("postgresql://", "postgresql+")):
         raise RuntimeError("Production DATABASE_URL must use PostgreSQL")
     for origin in candidate.allowed_origins_list:

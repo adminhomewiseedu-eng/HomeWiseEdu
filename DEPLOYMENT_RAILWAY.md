@@ -21,6 +21,14 @@ This is a deployment runbook, not an authorization to deploy. The immediate MVP 
 | Backend config | `OPENAI_MODEL` | Approved OpenAI chat/evaluation model |
 | Backend config | `ELEVENLABS_VOICE_ID` | Authoritative Ms. Ade voice ID |
 | Backend config | `ALLOWED_ORIGINS` | Comma-separated public HTTPS frontend origins |
+| Backend config | `FRONTEND_URL` | Public HTTPS frontend origin used to construct password-reset links |
+| Backend private | `SMTP_HOST`, `SMTP_PORT` | Transactional SMTP provider connection |
+| Backend private | `SMTP_USERNAME`, `SMTP_PASSWORD` | Transactional SMTP credentials when required |
+| Backend config | `SMTP_FROM_EMAIL` | Verified sender; normally `support@homewiseedu.com` |
+| Backend config | `SMTP_USE_TLS=true` | Enables STARTTLS for SMTP delivery |
+| Backend config | `PASSWORD_RESET_EXPIRE_MINUTES=45` | Single-use reset-token lifetime |
+| Backend config | `PASSWORD_RESET_RATE_LIMIT=5` | Per-process request cap within the configured window |
+| Backend config | `PASSWORD_RESET_RATE_WINDOW_SECONDS=900` | Password-reset throttling window |
 | Backend config | `STORAGE_ROOT=/data/homewiseedu` | Durable evidence, report and student-profile-image root on the volume |
 | Backend config | `TTS_CACHE_DIR=/tmp/homewiseedu/tts` | Disposable, regenerable TTS cache |
 | Backend config | `MAX_UPLOAD_BYTES` | Optional override; default 26214400 |
@@ -33,6 +41,7 @@ This is a deployment runbook, not an authorization to deploy. The immediate MVP 
 | Railway-provided | `RAILWAY_ENVIRONMENT` | Production environment marker |
 
 Never place provider keys, `SECRET_KEY`, or `DATABASE_URL` in a `VITE_*` variable.
+Never enable `PASSWORD_RESET_DEV_MODE` in production; startup rejects it. Production also requires `SMTP_HOST` and `SMTP_FROM_EMAIL` and fails startup if delivery is not configured. Configure `SMTP_USERNAME` and `SMTP_PASSWORD` together when the provider requires authentication.
 
 ## Migration and data preparation
 

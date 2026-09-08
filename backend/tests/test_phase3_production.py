@@ -27,6 +27,8 @@ def production_settings(**updates):
         SECRET_KEY="s" * 32, OPENAI_API_KEY="openai", OPENAI_MODEL="gpt-4o-mini",
         ELEVENLABS_API_KEY="eleven", ELEVENLABS_VOICE_ID="voice",
         ALLOWED_ORIGINS="https://app.example.com", STORAGE_ROOT="/data/homewiseedu",
+        FRONTEND_URL="https://app.example.com", SMTP_HOST="smtp.example.com",
+        SMTP_FROM_EMAIL="support@homewiseedu.com",
     )
     values.update(updates)
     return Settings(**values)
@@ -41,6 +43,16 @@ def test_production_rejects_missing_or_short_secret():
 def test_production_rejects_unsafe_cors(origins):
     with pytest.raises(RuntimeError, match="ALLOWED_ORIGINS"):
         validate_production_settings(production_settings(ALLOWED_ORIGINS=origins))
+
+
+def test_production_requires_password_reset_email_delivery():
+    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+        validate_production_settings(production_settings(SMTP_HOST=""))
+
+
+def test_production_rejects_partial_smtp_credentials():
+    with pytest.raises(RuntimeError, match="configured together"):
+        validate_production_settings(production_settings(SMTP_USERNAME="user", SMTP_PASSWORD=""))
 
 
 def test_upload_rejects_mime_and_path_traversal_filename():

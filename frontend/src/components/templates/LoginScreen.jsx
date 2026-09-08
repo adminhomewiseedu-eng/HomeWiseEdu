@@ -52,6 +52,7 @@ export default function LoginScreen({ onNavigate, onLogin }) {
             <form onSubmit={handleSubmit}>
               <InputField label="Email address" type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               <InputField label="Password" type="password" placeholder="Your password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              <div className="auth-forgot-link"><a onClick={() => onNavigate('/forgot-password')}>Forgot password?</a></div>
               <Button type="submit" variant="primary" style={{ width: '100%' }} disabled={loading}>
                 {loading ? 'Logging in...' : 'Log in →'}
               </Button>

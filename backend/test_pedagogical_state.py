@@ -3,6 +3,8 @@ import asyncio
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from backend.main import app
+from backend.database import SessionLocal
+from backend.models import LessonSession
 from backend.services.openai_service import (
     safe_format_template,
     _load_prompt_template,
@@ -18,6 +20,19 @@ def demo_headers():
     response = client.post("/api/auth/login", json={"email": "sarah@email.com", "password": "password"})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+def clean_demo_classroom_session():
+    """Isolate the shared demo lesson used by the endpoint integration test."""
+    def remove_session():
+        with SessionLocal() as db:
+            db.query(LessonSession).filter_by(child_id=1, lesson_id=1, day_number=1).delete()
+            db.commit()
+
+    remove_session()
+    yield
+    remove_session()
 
 
 def test_ai_tutor_template_renders_without_missing_placeholders():
@@ -349,8 +364,11 @@ async def test_ai_evaluation_failure_returns_safe_non_mastering_state():
         assert "saved" in result["ai_feedback"].lower()
 
 
-def test_full_classroom_chat_guidance_endpoint_flow():
+def test_full_classroom_chat_guidance_endpoint_flow(clean_demo_classroom_session):
     """Test full endpoint flow with pedagogical state synchronization."""
+    # This integration test deliberately exercises the permanent demo tuple.
+    # Other endpoint tests may have advanced it, so establish and restore the
+    # resource boundary explicitly instead of depending on collection order.
     headers = demo_headers()
     res1 = client.post("/api/lessons/chat-guidance", json={
         "child_id": 1,

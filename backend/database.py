@@ -22,6 +22,9 @@ def ensure_db_schema():
     if not settings.DATABASE_URL.startswith("sqlite") or settings.is_production:
         return
     with engine.begin() as conn:
+        user_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(users)"))]
+        if user_columns and "auth_version" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0"))
         columns = [row[1] for row in conn.execute(text("PRAGMA table_info(lesson_sessions)"))]
         if columns and "pedagogical_state" not in columns:
             conn.execute(text("ALTER TABLE lesson_sessions ADD COLUMN pedagogical_state JSON DEFAULT '{}'"))

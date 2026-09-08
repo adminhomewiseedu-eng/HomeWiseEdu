@@ -4,6 +4,8 @@ import Navbar from './components/organisms/Navbar';
 import LandingScreen from './components/templates/LandingScreen';
 import SignupScreen from './components/templates/SignupScreen';
 import LoginScreen from './components/templates/LoginScreen';
+import ForgotPasswordScreen from './components/templates/ForgotPasswordScreen';
+import ResetPasswordScreen from './components/templates/ResetPasswordScreen';
 import AddChildScreen from './components/templates/AddChildScreen';
 import ParentDashboardScreen from './components/templates/ParentDashboardScreen';
 import StudentDashboardScreen from './components/templates/StudentDashboardScreen';
@@ -100,7 +102,7 @@ export default function App() {
 
   const userRole = currentUser?.role || 'parent';
   const currentPath = location.pathname.replace('/', '') || 'landing';
-  const publicPages = ['', 'landing', 'signup', 'login'];
+  const publicPages = ['', 'landing', 'signup', 'login', 'forgot-password', 'reset-password'];
   const isProtected = !publicPages.includes(currentPath);
   if (isProtected && !currentUser && currentPath !== 'add-child') {
     return <Navigate to="/login" replace />;
@@ -113,6 +115,8 @@ export default function App() {
         <Route path="/" element={<LandingScreen onNavigate={go} onStartLesson={() => go('/login')} />} />
         <Route path="/signup" element={<SignupScreen onNavigate={go} onSignup={handleSignup} />} />
         <Route path="/login" element={<LoginScreen onNavigate={go} onLogin={handleLogin} />} />
+        <Route path="/forgot-password" element={<ForgotPasswordScreen onNavigate={go} />} />
+        <Route path="/reset-password" element={<ResetPasswordScreen onNavigate={go} />} />
         <Route path="/add-child" element={currentUser?.role === 'parent' ? <AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : '/login'} replace />} />
         <Route path="/parent" element={currentUser?.role === 'parent' ? <ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : currentUser?.role === 'admin' ? '/admin' : '/login'} replace />} />
         <Route path="/student" element={activeChild ? <StudentDashboardScreen child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/login' : '/parent'} replace />} />
