@@ -25,6 +25,7 @@ test('profile supports image preview and validation feedback', () => {
 test('parent header exposes settings, profile avatar, and logout', () => {
   assert.match(nav, /HomeWiseEdu/); assert.match(nav, /Settings/); assert.match(nav, /View profile/); assert.match(nav, /Log out/);
   assert.match(nav, /\/parent\/profile/); assert.match(nav, /parentProfileRevision/);
+  assert.match(nav, /header-icon-action/); assert.doesNotMatch(nav, /<span>Settings<\/span>/); assert.doesNotMatch(nav, /<span>Log out<\/span>/);
 });
 
 test('parent profile overview is read-only and links to editing in settings', () => {
