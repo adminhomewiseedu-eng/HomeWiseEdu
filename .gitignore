@@ -26,6 +26,7 @@ backend/uploads/audio/*
 
 # Node / Frontend
 node_modules/
+.pnpm-store/
 dist/
 dist-ssr/
 *.local

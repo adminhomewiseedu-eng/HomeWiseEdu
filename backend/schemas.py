@@ -67,6 +67,51 @@ class ParentProfileUpdate(BaseModel):
     postal_code: Optional[str] = None
     country: Optional[str] = None
 
+class AdminParentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: str
+    last_name: str
+    email: str
+    phone_number: Optional[str] = None
+    address_line_1: Optional[str] = None
+    address_line_2: Optional[str] = None
+    city: Optional[str] = None
+    state_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+
+    @field_validator("email")
+    @classmethod
+    def normalize_admin_parent_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not value or "@" not in value:
+            raise ValueError("Enter a valid email address")
+        return value
+
+class AdminParentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    address_line_1: Optional[str] = None
+    address_line_2: Optional[str] = None
+    city: Optional[str] = None
+    state_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+
+class AdminParentStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"active", "suspended"}:
+            raise ValueError("Status must be active or suspended")
+        return normalized
+
 # Subject schemas
 class SubjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

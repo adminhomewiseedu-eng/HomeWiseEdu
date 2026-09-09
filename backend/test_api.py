@@ -39,7 +39,8 @@ def test_auth_login():
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    assert data["user"]["name"] == "Sarah Wilson"
+    assert data["user"]["email"] == "sarah@email.com"
+    assert data["user"]["role"] == "parent"
 
 def test_curriculum_subjects():
     response = client.get("/api/curriculum/subjects")

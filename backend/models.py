@@ -11,8 +11,10 @@ class User(Base):
     name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, default="parent") # parent, student, admin
+    account_status = Column(String, default="active", nullable=False) # active, suspended
     avatar = Column(String, default="S")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
     auth_version = Column(Integer, default=0, nullable=False)
 
     children = relationship("Child", back_populates="parent", cascade="all, delete-orphan", foreign_keys="Child.parent_id")

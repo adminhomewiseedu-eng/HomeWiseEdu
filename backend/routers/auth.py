@@ -60,6 +60,8 @@ def get_current_user(authorization: Optional[str] = Header(None), db: Session = 
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
         if payload.get("ver", 0) != (user.auth_version or 0):
             raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+        if (user.account_status or "active") != "active":
+            raise HTTPException(status_code=403, detail="This account has been suspended. Please contact support@homewiseedu.com.")
         return user
     except HTTPException:
         raise
@@ -138,6 +140,8 @@ def login(creds: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == creds.email.strip().lower()).first()
     if not user or not verify_password(creds.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if (user.account_status or "active") != "active":
+        raise HTTPException(status_code=403, detail="This account has been suspended. Please contact support@homewiseedu.com.")
 
     token = create_access_token({"sub": user.email, "id": user.id, "role": user.role, "ver": user.auth_version or 0})
     child = db.query(Child).filter(Child.user_id == user.id).first() if user.role == "student" else None

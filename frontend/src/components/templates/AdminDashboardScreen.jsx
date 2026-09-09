@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Activity, BarChart3, BookOpen, Bot, ChevronLeft, FileBarChart, FileCheck2, FolderOpen,
-  GraduationCap, LayoutDashboard, Menu, Search, Settings, Users, WalletCards, X } from 'lucide-react';
+  GraduationCap, LayoutDashboard, Mail, Menu, MoreVertical, Pencil, Plus, Search, Settings,
+  UserCheck, UserRound, Users, UserX, WalletCards, X } from 'lucide-react';
 import BrandLogo from '../molecules/BrandLogo';
 import { adminAPI, curriculumAPI, evidenceAPI, reportsAPI } from '../../services/api';
+import { parentPageCount } from '../../utils/adminParentsUi';
 
 const NAV = [
   ['Overview', '/admin', LayoutDashboard], ['Curriculum', '/admin/curriculum', BookOpen],
-  ['Students', '/admin/students', Users], ['Learning Evidence', '/admin/evidence', FileCheck2],
+  ['Parents', '/admin/parents', UserRound], ['Students', '/admin/students', Users], ['Learning Evidence', '/admin/evidence', FileCheck2],
   ['Analytics', '/admin/analytics', BarChart3], ['Reports', '/admin/reports', FileBarChart],
   ['Earnings / Subscriptions', '/admin/earnings', WalletCards], ['Content', '/admin/content', FolderOpen],
   ['AI Monitoring', '/admin/ai-monitoring', Bot], ['Settings', '/admin/settings', Settings],
@@ -121,6 +123,80 @@ function CurriculumDetail({ lessonId }) {
     </section></>;
 }
 
+function AdminParentAvatar({ parent, size = 40 }) {
+  const [source, setSource] = useState('');
+  useEffect(() => {
+    let objectUrl = '';
+    if (parent?.profile_image_url) adminAPI.getParentImage(parent.id).then(({ data }) => {
+      objectUrl = URL.createObjectURL(data); setSource(objectUrl);
+    }).catch(() => setSource(''));
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [parent?.id, parent?.profile_image_url]);
+  return <span className="admin-parent-avatar" style={{ width: size, height: size }}>
+    {source ? <img src={source} alt="" /> : (parent?.name?.[0] || 'P').toUpperCase()}
+  </span>;
+}
+
+const EMPTY_PARENT_FORM = { first_name:'', last_name:'', email:'', phone_number:'', address_line_1:'', address_line_2:'', city:'', state_region:'', postal_code:'', country:'' };
+
+function ParentForm({ initial = EMPTY_PARENT_FORM, includeEmail = false, busy, onSubmit, submitLabel }) {
+  const [form, setForm] = useState(() => ({ ...EMPTY_PARENT_FORM, ...initial }));
+  const set = (key, value) => setForm(old => ({ ...old, [key]: value }));
+  return <form className="admin-parent-form" onSubmit={event => { event.preventDefault(); onSubmit(form); }}>
+    <div className="admin-form-grid">
+      <label>First name<input required value={form.first_name} onChange={e=>set('first_name',e.target.value)}/></label>
+      <label>Last name<input required value={form.last_name} onChange={e=>set('last_name',e.target.value)}/></label>
+      {includeEmail && <label className="admin-form-wide">Email<input required type="email" value={form.email} onChange={e=>set('email',e.target.value)}/></label>}
+      <label>Phone<input value={form.phone_number||''} onChange={e=>set('phone_number',e.target.value)}/></label>
+      <label>Country<input value={form.country||''} onChange={e=>set('country',e.target.value)}/></label>
+      <label className="admin-form-wide">Address line 1<input value={form.address_line_1||''} onChange={e=>set('address_line_1',e.target.value)}/></label>
+      <label className="admin-form-wide">Address line 2<input value={form.address_line_2||''} onChange={e=>set('address_line_2',e.target.value)}/></label>
+      <label>City / Town<input value={form.city||''} onChange={e=>set('city',e.target.value)}/></label>
+      <label>State / Region<input value={form.state_region||''} onChange={e=>set('state_region',e.target.value)}/></label>
+      <label>Postal code<input value={form.postal_code||''} onChange={e=>set('postal_code',e.target.value)}/></label>
+    </div>
+    <button className="btn btn-primary" disabled={busy}>{busy?'Saving…':submitLabel}</button>
+  </form>;
+}
+
+function Parents() {
+  const navigate=useNavigate();
+  const [search,setSearch]=useState(''); const [status,setStatus]=useState(''); const [sort,setSort]=useState('newest'); const [page,setPage]=useState(1);
+  const [showCreate,setShowCreate]=useState(false); const [busy,setBusy]=useState(false); const [message,setMessage]=useState('');
+  const state=useAdminData(()=>adminAPI.getParents({search,status,sort,page,page_size:20}),[search,status,sort,page]);
+  const create=async(form)=>{setBusy(true);setMessage('');try{const response=await adminAPI.createParent(form);setShowCreate(false);setMessage(response.data.message);await state.reload();}catch(e){setMessage(e.response?.data?.detail||'Unable to create parent.');}finally{setBusy(false);}};
+  const changeStatus=async(parent,next)=>{if(!window.confirm(`${next==='suspended'?'Suspend':'Reactivate'} ${parent.name}?`))return;setMessage('');try{await adminAPI.updateParentStatus(parent.id,next);setMessage(next==='suspended'?'Parent suspended.':'Parent reactivated.');await state.reload();}catch(e){setMessage(e.response?.data?.detail||'Unable to update parent status.');}};
+  if(state.loading)return <Loading/>; if(state.error)return <ErrorState message={state.error} retry={state.reload}/>;
+  const data=state.data, pages=parentPageCount(data.total,data.page_size);
+  return <>
+    <div className="admin-stat-grid">
+      <StatCard label="Total Parents" value={data.summary.total_parents} icon={UserRound}/><StatCard label="Active Parents" value={data.summary.active_parents} icon={UserCheck}/><StatCard label="Total Children" value={data.summary.total_children} icon={Users}/><StatCard label="Active Subscriptions" value={null} icon={WalletCards}/>
+    </div>
+    <section className="card pad"><div className="admin-section-title"><div><h3>Parents</h3><p>Manage parent accounts, children and account information.</p></div><button className="btn btn-primary btn-sm" onClick={()=>setShowCreate(true)}><Plus size={17}/> Add Parent</button></div>
+      {message&&<div className="admin-notice">{message}</div>}
+      <div className="admin-filters admin-parent-filters"><input placeholder="Search name, email or phone…" value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}}/><select value={status} onChange={e=>{setStatus(e.target.value);setPage(1)}}><option value="">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option></select><select value={sort} onChange={e=>{setSort(e.target.value);setPage(1)}}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="children">Number of children</option></select></div>
+      {!data.items.length?<Empty>{search?'Search returned no results.':'No parents found.'}</Empty>:<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Parent</th><th>Email</th><th>Phone</th><th>Children</th><th>Subscription</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead><tbody>{data.items.map(parent=><tr key={parent.id} className="admin-clickable-row" onClick={()=>navigate(`/admin/parents/${parent.id}`)}><td><div className="admin-parent-cell"><AdminParentAvatar parent={parent}/><strong>{parent.name}</strong></div></td><td>{parent.email}</td><td>{parent.phone_number||'—'}</td><td>{parent.child_count}</td><td><Status value="not_configured"/></td><td><Status value={parent.account_status}/></td><td>{formatDate(parent.created_at)}</td><td onClick={e=>e.stopPropagation()}><div className="admin-row-actions"><button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/admin/parents/${parent.id}`)}>View</button><details><summary aria-label={`More actions for ${parent.name}`}><MoreVertical size={18}/></summary><div className="admin-action-menu"><button onClick={()=>navigate(`/admin/parents/${parent.id}/edit`)}><Pencil size={15}/> Edit</button>{parent.account_status==='active'?<button onClick={()=>changeStatus(parent,'suspended')}><UserX size={15}/> Suspend</button>:<button onClick={()=>changeStatus(parent,'active')}><UserCheck size={15}/> Reactivate</button>}</div></details></div></td></tr>)}</tbody></table></div>}
+      <div className="admin-pagination"><button className="btn btn-ghost btn-sm" disabled={page<=1} onClick={()=>setPage(page-1)}>Previous</button><span>Page {page} of {pages} · {data.total} parents</span><button className="btn btn-ghost btn-sm" disabled={page>=pages} onClick={()=>setPage(page+1)}>Next</button></div>
+    </section>
+    {showCreate&&<div className="admin-modal-backdrop" onClick={()=>setShowCreate(false)}><div className="admin-modal card pad" onClick={e=>e.stopPropagation()}><button className="admin-modal-close" aria-label="Close" onClick={()=>setShowCreate(false)}><X/></button><h3>Add Parent</h3><p>The parent will receive a secure link to choose their password. No plaintext password is sent.</p><ParentForm includeEmail busy={busy} onSubmit={create} submitLabel="Create parent"/></div></div>}
+  </>;
+}
+
+function ParentDetail({ parentId, editMode=false }) {
+  const navigate=useNavigate(); const state=useAdminData(()=>adminAPI.getParent(parentId),[parentId]); const [busy,setBusy]=useState(false); const [message,setMessage]=useState('');
+  const save=async(form)=>{setBusy(true);setMessage('');try{await adminAPI.updateParent(parentId,form);setMessage('Parent details updated.');await state.reload();navigate(`/admin/parents/${parentId}`);}catch(e){setMessage(e.response?.data?.detail||'Unable to update parent.');}finally{setBusy(false);}};
+  const status=async(next)=>{if(!window.confirm(`${next==='suspended'?'Suspend':'Reactivate'} this parent account?`))return;setBusy(true);try{await adminAPI.updateParentStatus(parentId,next);await state.reload();setMessage(next==='suspended'?'Parent suspended.':'Parent reactivated.');}catch(e){setMessage(e.response?.data?.detail||'Unable to update status.');}finally{setBusy(false);}};
+  const reset=async()=>{setBusy(true);setMessage('');try{const response=await adminAPI.sendParentReset(parentId);setMessage(response.data.message);}catch(e){setMessage(e.response?.data?.detail||'Unable to send reset email.');}finally{setBusy(false);}};
+  if(state.loading)return <Loading/>; if(state.error)return <ErrorState message={state.error} retry={state.reload}/>; const p=state.data;
+  if(editMode)return <><button className="admin-back" onClick={()=>navigate(`/admin/parents/${parentId}`)}><ChevronLeft size={18}/> Back to Parent</button><section className="card pad"><h3>Edit Parent</h3><p>Email remains read-only because verified email changes are not implemented.</p><div className="admin-readonly-email"><strong>Email</strong><span>{p.email}</span></div>{message&&<div className="admin-notice">{message}</div>}<ParentForm initial={p} busy={busy} onSubmit={save} submitLabel="Save changes"/></section></>;
+  return <><button className="admin-back" onClick={()=>navigate('/admin/parents')}><ChevronLeft size={18}/> Back to Parents</button>{message&&<div className="admin-notice">{message}</div>}
+    <section className="card pad admin-parent-hero"><AdminParentAvatar parent={p} size={72}/><div><h3>{p.name}</h3><p>{p.email}</p><div className="admin-summary"><Status value={p.account_status}/><Status value="not_configured"/></div></div><div className="admin-parent-hero-actions"><button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/admin/parents/${parentId}/edit`)}><Pencil size={16}/> Edit profile</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={reset}><Mail size={16}/> Send reset link</button>{p.account_status==='active'?<button className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>status('suspended')}><UserX size={16}/> Suspend</button>:<button className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>status('active')}><UserCheck size={16}/> Reactivate</button>}</div></section>
+    <div className="admin-grid-2"><section className="card pad"><h3>Personal information</h3><dl className="admin-details"><dt>First name</dt><dd>{p.first_name||'—'}</dd><dt>Last name</dt><dd>{p.last_name||'—'}</dd><dt>Email</dt><dd>{p.email}</dd><dt>Phone</dt><dd>{p.phone_number||'—'}</dd><dt>Address</dt><dd>{[p.address_line_1,p.address_line_2,p.city,p.state_region,p.postal_code,p.country].filter(Boolean).join(', ')||'—'}</dd></dl></section><section className="card pad"><h3>Account information</h3><dl className="admin-details"><dt>Role</dt><dd>{p.role}</dd><dt>Status</dt><dd><Status value={p.account_status}/></dd><dt>Created</dt><dd>{formatDate(p.created_at)}</dd><dt>Last updated</dt><dd>{formatDate(p.updated_at)}</dd></dl></section></div>
+    <section className="card pad"><div className="admin-section-title"><div><h3>Children</h3><p>Total Children: {p.total_children}</p></div></div>{!p.children.length?<Empty>This parent has no children yet.</Empty>:<div className="admin-parent-children">{p.children.map(child=><button className="admin-child-card" key={child.id} onClick={()=>navigate(`/admin/students/${child.id}`)}><span className="admin-parent-avatar">{child.avatar}</span><span><strong>{child.name}</strong><small>{child.level_label} · {child.subjects.join(', ')||'No subjects selected'}</small><small>{child.progress_percentage}% progress · {child.login_enabled?'Login enabled':'No direct login'}</small></span><Status value={child.account_status}/></button>)}</div>}</section>
+    <section className="card pad"><h3>Subscription</h3><Empty><WalletCards size={32}/><strong>{p.subscription.message}</strong></Empty></section>
+  </>;
+}
+
 function Students() {
   const navigate=useNavigate(); const state=useAdminData(adminAPI.getStudents,[]); const [query,setQuery]=useState(''); const [level,setLevel]=useState(''); const [status,setStatus]=useState(''); const [subject,setSubject]=useState(''); const [progress,setProgress]=useState('');
   if(state.loading)return <Loading/>; if(state.error)return <ErrorState message={state.error} retry={state.reload}/>;
@@ -156,6 +232,7 @@ export default function AdminDashboardScreen({ onExit }) {
   const title=NAV.find(([,path])=>path==='/admin'?location.pathname==='/admin':location.pathname.startsWith(path))?.[0]||'Admin';
   let page=<Overview/>;
   if(base==='curriculum') page=detailId?<CurriculumDetail lessonId={detailId}/>:<Curriculum/>;
+  else if(base==='parents') page=detailId?<ParentDetail parentId={detailId} editMode={segments[3]==='edit'}/>:<Parents/>;
   else if(base==='students') page=detailId?<StudentDetail studentId={detailId}/>:<Students/>;
   else if(base==='evidence') page=<Evidence/>; else if(base==='analytics') page=<Analytics/>; else if(base==='reports') page=<Reports/>;
   else if(base==='earnings') page=<Earnings/>; else if(base==='content') page=<Content/>; else if(base==='ai-monitoring') page=<AIMonitoring/>; else if(base==='settings') page=<SettingsPage/>;

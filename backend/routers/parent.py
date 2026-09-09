@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 from sqlalchemy.orm import Session
 from typing import Dict, Any
+from datetime import datetime
 from ..database import get_db
 from ..models import User, ParentProfile, Child, ParentAlert, AIRecommendation, LearningEvidence, StudentProgress, Lesson, Unit, ChildSubject, Subject
 from ..schemas import RecommendationAction, ChildUpdate, StudentCredentialsUpdate, ParentProfileUpdate
@@ -36,7 +37,7 @@ def _profile_payload(user: User, profile: ParentProfile | None) -> dict:
         "profile_image_url": "/api/parent/profile/image" if profile and profile.profile_image_name else None,
         "role": "Parent",
         "joined_at": user.created_at,
-        "account_status": "Active",
+        "account_status": (user.account_status or "active").title(),
     }
 
 
@@ -60,6 +61,7 @@ def update_parent_profile(changes: ParentProfileUpdate, db: Session = Depends(ge
     if first or last:
         current_user.name = " ".join(part for part in (first, last) if part).strip()
         current_user.avatar = (first or last)[0].upper()
+    current_user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(profile)
     return _profile_payload(current_user, profile)

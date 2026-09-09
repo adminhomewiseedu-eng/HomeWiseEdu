@@ -25,6 +25,11 @@ def ensure_db_schema():
         user_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(users)"))]
         if user_columns and "auth_version" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0"))
+        if user_columns and "account_status" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR NOT NULL DEFAULT 'active'"))
+        if user_columns and "updated_at" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
+            conn.execute(text("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
         columns = [row[1] for row in conn.execute(text("PRAGMA table_info(lesson_sessions)"))]
         if columns and "pedagogical_state" not in columns:
             conn.execute(text("ALTER TABLE lesson_sessions ADD COLUMN pedagogical_state JSON DEFAULT '{}'"))

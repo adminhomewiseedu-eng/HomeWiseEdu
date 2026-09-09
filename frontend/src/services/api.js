@@ -164,6 +164,13 @@ export const studentAPI = {
 
 export const adminAPI = {
   getDashboard: () => api.get('/api/admin/dashboard'),
+  getParents: (params = {}) => api.get('/api/admin/parents', { params }),
+  getParent: (parentId) => api.get(`/api/admin/parents/${parentId}`),
+  createParent: (payload) => api.post('/api/admin/parents', payload),
+  updateParent: (parentId, payload) => api.patch(`/api/admin/parents/${parentId}`, payload),
+  updateParentStatus: (parentId, status) => api.patch(`/api/admin/parents/${parentId}/status`, { status }),
+  sendParentReset: (parentId) => api.post(`/api/admin/parents/${parentId}/reset-password`),
+  getParentImage: (parentId) => api.get(`/api/admin/parents/${parentId}/profile-image`, { responseType: 'blob' }),
   getStudents: () => api.get('/api/admin/students'),
   getStudent: (studentId) => api.get(`/api/admin/students/${studentId}`),
   getEvidence: () => api.get('/api/admin/evidence'),

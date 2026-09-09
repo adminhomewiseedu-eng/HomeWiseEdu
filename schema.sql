@@ -7,8 +7,11 @@ CREATE TABLE users (
     password_hash VARCHAR NOT NULL,
     role VARCHAR,
     avatar VARCHAR,
+    account_status VARCHAR DEFAULT 'active' NOT NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE,
-    PRIMARY KEY (id)
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT ck_users_account_status CHECK (account_status IN ('active', 'suspended'))
 );
 
 CREATE TABLE subjects (
