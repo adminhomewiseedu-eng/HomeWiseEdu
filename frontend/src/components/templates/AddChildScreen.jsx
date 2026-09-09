@@ -98,7 +98,10 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
       <div className="app">
         <div className="appbar">
           <div className="wrap">
-            <BrandLogo variant="crest" onClick={() => onNavigate('/')} />
+            <button className="parent-brand" type="button" onClick={() => onNavigate('/parent')} aria-label="Go to parent dashboard">
+              <BrandLogo variant="crest" />
+              <span>HomeWiseEdu</span>
+            </button>
             <div className="appbar-right">
               <div className="plan-tag">✨ Premium trial</div>
               <div className="avatar-btn">{initial}</div>
