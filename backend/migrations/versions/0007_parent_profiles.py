@@ -13,6 +13,14 @@ depends_on = None
 
 
 def upgrade():
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "parent_profiles" in inspector.get_table_names():
+        index_names = {index["name"] for index in inspector.get_indexes("parent_profiles")}
+        if "ix_parent_profiles_user_id" not in index_names:
+            op.create_index("ix_parent_profiles_user_id", "parent_profiles", ["user_id"], unique=True)
+        return
+
     op.create_table(
         "parent_profiles",
         sa.Column("id", sa.Integer(), primary_key=True),
