@@ -579,13 +579,21 @@ export default function LessonPlayerScreen({
             const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
             const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
               && Boolean(realtimeDeliveryTokenRef.current);
-            // WE3 is the final teacher-led demonstration. Once its completed,
-            // uninterrupted audio has drained, the server-issued token is the
-            // delivery authority. A short follow-up acknowledgement after a
-            // learner interjection must not strand the session in WE3.
             const transcriptComplete = teacherDeliveryLooksComplete(completedPhase, transcript);
+            if (isAuthoritativeTeacherDelivery && responseTag !== 'teacher_delivery') {
+              // Automatic Realtime replies to an interruption, acknowledgement,
+              // or help request are conversational. They must never consume the
+              // server-issued delivery token. Resume the same teacher phase in
+              // a separately tagged response after addressing the learner.
+              lastRealtimeStudentTranscriptRef.current = '';
+              realtime.createResponse(
+                `${realtimePhaseInstructionRef.current}\nThe learner has just spoken during this teacher-led phase. Respond directly to what they said, help or clarify if requested, then resume and fully deliver the current phase from the interrupted point. Do not count their acknowledgement as completion.`,
+                'teacher_delivery',
+              );
+              return;
+            }
             if (isAuthoritativeTeacherDelivery && !shouldAcknowledgeTeacherDelivery(
-              completedPhase,
+              responseTag,
               completed,
               hadAudio,
               transcriptComplete,
@@ -624,7 +632,7 @@ export default function LessonPlayerScreen({
               );
               return;
             }
-            const deliveryToken = responseTag === 'teacher_delivery' || isAuthoritativeTeacherDelivery
+            const deliveryToken = responseTag === 'teacher_delivery'
               ? realtimeDeliveryTokenRef.current
               : null;
             const data = await postRealtimeEvent({

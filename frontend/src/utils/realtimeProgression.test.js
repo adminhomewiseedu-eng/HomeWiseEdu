@@ -35,9 +35,11 @@ test('does not create a turn after practice becomes ready', () => {
   assert.equal(nextAuthoritativeRealtimeTurn('LESSON_SUMMARY', { current_phase: 'PRACTICE_READY', practice_ready: true }), null);
 });
 
-test('acknowledges drained WE3 audio even when the final follow-up is short', () => {
-  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', true, true, false), true);
-  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_2', true, true, false), false);
-  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', false, true, true), false);
-  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', true, false, true), false);
+test('only a complete explicitly tagged teacher response acknowledges delivery', () => {
+  assert.equal(shouldAcknowledgeTeacherDelivery('teacher_delivery', true, true, true), true);
+  assert.equal(shouldAcknowledgeTeacherDelivery(null, true, true, true), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('teacher_conversation', true, true, true), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('teacher_delivery', true, true, false), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('teacher_delivery', false, true, true), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('teacher_delivery', true, false, true), false);
 });

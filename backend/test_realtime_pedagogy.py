@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from backend.database import SessionLocal
 from backend.main import app
 from backend.models import LessonSession
+from backend.routers.lessons import is_repeat_or_clarification
 
 
 client = TestClient(app)
@@ -42,6 +43,11 @@ def event(headers, child_id, event_type, **extra):
     })
 
 
+def test_pause_help_and_clarification_are_conversational_not_academic_evidence():
+    for phrase in ("wait", "pause", "hold on", "help", "I need help", "I don't understand"):
+        assert is_repeat_or_clarification(phrase)
+
+
 def test_realtime_delivery_tokens_enforce_all_three_worked_examples():
     child_id, headers = parent_and_child("delivery")
     started = event(headers, child_id, "start_class")
@@ -70,7 +76,7 @@ def test_realtime_delivery_tokens_enforce_all_three_worked_examples():
     assert data["pedagogical_state"]["practice_ready"] is False
 
 
-def test_level_zero_teaching_is_concrete_and_does_not_ask_abstract_reflection():
+def test_teaching_adapts_dynamically_and_does_not_ask_abstract_reflection():
     child_id, headers = parent_and_child("handoff")
     greeting = event(headers, child_id, "start_class").json()
     teaching = event(
@@ -81,9 +87,9 @@ def test_level_zero_teaching_is_concrete_and_does_not_ask_abstract_reflection():
     ).json()
 
     assert teaching["pedagogical_state"]["current_phase"] == "TEACHING"
-    assert "model the counting yourself" in teaching["phase_instruction"]
-    assert "Do not ask abstract reflection questions" in teaching["phase_instruction"]
-    assert "three examples" in teaching["phase_instruction"]
+    assert "Adapt the language and scaffolding to the supplied learner level and objective" in teaching["phase_instruction"]
+    assert "Do not ask an abstract reflection" in teaching["phase_instruction"]
+    assert "three teacher-led worked examples" in teaching["phase_instruction"]
     assert "Never produce a standalone acknowledgement" in teaching["phase_instruction"]
 
 
@@ -204,16 +210,17 @@ def test_complete_realtime_lesson_progresses_deterministically_to_practice_ready
     state = data["pedagogical_state"]
     assert state["worked_examples_completed"] == 3
     assert state["worked_examples_delivered"] == {"1": True, "2": True, "3": True}
-    assert state["active_question"] == "What number comes after four when we count to five?"
+    assert state["active_question"] == "How many fingers do you have on one hand?"
     assert state["active_phase"] == "UNDERSTANDING_CHECK"
     assert state["active_task"] == state["active_question"]
+    assert state["active_expected_concept"] == "5"
     assert state["practice_ready"] is False
     assert state["active_question"] in data["phase_instruction"]
 
     question = event(headers, child_id, "assistant_response_completed", assistant_response="If we count one, two, three, four, what number comes next?")
     assert question.status_code == 200, question.text
     data = question.json()
-    assert data["pedagogical_state"]["active_question"] == "What number comes after four when we count to five?"
+    assert data["pedagogical_state"]["active_question"] == "How many fingers do you have on one hand?"
 
     with patch("backend.routers.lessons.evaluate_academic_response", new=AsyncMock(return_value={"result": "correct", "feedback": "Correct"})):
         for phase, answer, next_phase, next_question in [

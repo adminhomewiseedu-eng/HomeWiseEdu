@@ -79,7 +79,7 @@ def _realtime_classroom_instructions(child, lesson, active_day, state) -> str:
         "When the learner says 'continue', 'go on', 'carry on', 'proceed', or another request to resume, continue "
         "the current authoritative teaching or worked example immediately from the point of interruption. Do not "
         "reply only with an acknowledgement such as 'Okay', 'Let's go', or 'Sure'. The same spoken turn must contain "
-        "the resumed lesson content and must finish with the phase's required direct learner question. "
+        "the resumed lesson content; it must finish with a direct learner question only when the authoritative phase requires one. "
         "At an academic checkpoint, immediately acknowledge that you heard the learner in a few neutral words, "
         "without saying whether the answer is correct, then call submit_academic_response in the same response. "
         "If the learner repeats the same phrase while waiting, acknowledge it once and answer immediately. "

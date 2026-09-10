@@ -33,10 +33,6 @@ export function nextAuthoritativeRealtimeTurn(previousPhase, state) {
   return null;
 }
 
-export function shouldAcknowledgeTeacherDelivery(phase, completed, hadAudio, transcriptLooksComplete) {
-  if (!completed || !hadAudio) return false;
-  // WE3 completion is governed by the issued delivery token and drained
-  // Realtime audio. A short follow-up after an interjection is not grounds to
-  // withhold that token and strand the authoritative state machine.
-  return phase === 'WORKED_EXAMPLE_3' || transcriptLooksComplete;
+export function shouldAcknowledgeTeacherDelivery(responseTag, completed, hadAudio, transcriptLooksComplete) {
+  return responseTag === 'teacher_delivery' && completed && hadAudio && transcriptLooksComplete;
 }

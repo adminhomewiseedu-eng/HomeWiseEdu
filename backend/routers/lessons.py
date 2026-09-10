@@ -34,7 +34,8 @@ REPEAT_OR_CLARIFICATION_PHRASES = {
         "i didnt hear", "i didn't hear", "go again", "one more time", "pardon",
         "excuse me", "what was the question", "what was that", "can you say that again",
         "i was not paying attention", "i wasn't paying attention", "how many", "how many slices",
-        "how much", "tell me again", "explain that again"
+        "how much", "tell me again", "explain that again", "wait", "pause", "hold on",
+        "help", "i need help", "i do not understand", "i don't understand"
     ]
 }
 
@@ -252,19 +253,26 @@ def ensure_understanding_check_question(state: Dict[str, Any], context: Dict[str
     if state.get("active_phase") == "UNDERSTANDING_CHECK" and state.get("active_question"):
         return
 
-    level = context.get("level")
-    topic = str(context.get("lesson_topic") or "").lower()
-    if level == 0 and ("count" in topic or "number" in topic):
-        question = "What number comes after four when we count to five?"
-        expected = "The learner answers five."
-    else:
-        practice_questions = context.get("practice_questions") or []
-        authored_question = next(
-            (str(item).strip() for item in practice_questions if str(item).strip().endswith("?")),
-            "",
-        )
-        question = authored_question or f"What is one important thing you learned about {context.get('lesson_topic', 'this lesson')}?"
-        expected = str(context.get("key_concept") or question)[:1000]
+    practice_questions = context.get("practice_questions") or []
+    authored_question = ""
+    authored_answer = ""
+    for item in practice_questions:
+        if isinstance(item, dict):
+            candidate = next((str(item.get(key) or "").strip() for key in ("q", "question", "prompt", "text") if item.get(key)), "")
+            answer = next((str(item.get(key) or "").strip() for key in ("answer", "expected_answer", "correct_answer") if item.get(key)), "")
+        else:
+            candidate = str(item).strip()
+            answer = ""
+        if candidate:
+            authored_question = candidate if candidate.endswith("?") else f"{candidate}?"
+            authored_answer = answer
+            break
+
+    objectives = context.get("learning_objectives") or []
+    objective = str(objectives[0] if isinstance(objectives, list) and objectives else objectives).strip()
+    topic = str(context.get("lesson_topic") or "this lesson").strip()
+    question = authored_question or f"Using the example we just studied, can you show the first step for {objective or topic}?"
+    expected = authored_answer or str(context.get("key_concept") or objective or topic)[:1000]
 
     state["active_question"] = question
     state["active_task"] = question
@@ -333,11 +341,12 @@ def _realtime_phase_directive(
     example_one = json.dumps(examples[0], ensure_ascii=True) if len(examples) > 0 else "the first curriculum example"
     example_two = json.dumps(examples[1], ensure_ascii=True) if len(examples) > 1 else "the second curriculum example"
     example_three = json.dumps(examples[2], ensure_ascii=True) if len(examples) > 2 else "the third curriculum example"
-    is_level_zero = context.get("level") == 0
     common = (
         f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
         f"The learner's name is {context.get('student_name', 'Student')}. Address the learner by name naturally "
         "in the greeting and regularly in encouragement or transitions, without repeating it in every sentence. "
+        f"Adapt vocabulary, pace, and scaffolding dynamically for learner level {context.get('level')} "
+        f"({context.get('level_label')}) and objectives {json.dumps(context.get('learning_objectives') or [])}. "
         f"CURRICULUM_ANCHOR={curriculum_anchor}. "
         "Speak natural UK English only. Never switch language or translate, even if the learner's audio is unclear "
         "or appears to contain another language. "
@@ -349,7 +358,7 @@ def _realtime_phase_directive(
         "If the learner asks you to continue, go on, carry on, proceed, or resume, immediately continue this phase's "
         "actual lesson content from the interrupted point. Never produce a standalone acknowledgement such as "
         "'Okay, let's go' and stop. In the same response, teach the remaining content and end with the required "
-        "direct question. "
+        "phase content; ask a direct question only when the authoritative phase requires one. "
         "Keep the spoken turn concise and natural. "
     )
     directives = {
@@ -361,15 +370,10 @@ def _realtime_phase_directive(
         "TEACHING": (
             "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
             "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
-            "content from the note. Do not ask the learner to find or provide materials. "
-            + (
-                "For this Level 0 lesson, model the counting yourself using the exact numbers and objects in the note. "
-                "Do not ask abstract reflection questions such as 'what did you notice?' and do not test the learner yet. "
-                "Finish the complete explanation with a clear sentence that the teacher will now show three examples, then stop."
-                if is_level_zero else
-                "Finish the complete explanation with a clear transition into the three teacher-led worked examples, then stop. "
-                "Do not ask a formal question in this phase."
-            )
+            "content from the note. Adapt the language and scaffolding to the supplied learner level and objective, "
+            "without selecting a level-specific script. Do not ask the learner to find or provide materials. Do not "
+            "ask an abstract reflection or formal mastery question. Finish the complete explanation with a clear "
+            "transition into the three teacher-led worked examples, then stop."
         ),
         "WORKED_EXAMPLE_1": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_one}. "
