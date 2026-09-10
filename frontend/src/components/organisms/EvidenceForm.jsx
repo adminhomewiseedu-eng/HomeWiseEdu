@@ -15,7 +15,7 @@ export default function EvidenceForm({
         <h3>📤 Submit your learning evidence</h3>
       </div>
       <p style={{ color: 'var(--ink-soft)', fontWeight: 600, fontSize: 14, marginBottom: 6 }}>
-        Show what you learned! Write your answer or upload a photo of your work. Ms. Ade will check it and add it to your portfolio.
+        Show what you learned! Write your answer or upload a photo of your work. Ms Ade will check it and add it to your portfolio.
       </p>
 
       <div style={{ background: 'var(--cream)', borderRadius: 14, padding: 14, margin: '14px 0' }}>
@@ -63,7 +63,7 @@ export default function EvidenceForm({
         onClick={onSubmit}
         disabled={isSubmitting}
       >
-        {isSubmitting ? 'Evaluating with Ms. Ade…' : 'Submit to Ms. Ade →'}
+        {isSubmitting ? 'Evaluating with Ms Ade…' : 'Submit to Ms Ade →'}
       </button>
     </div>
   );

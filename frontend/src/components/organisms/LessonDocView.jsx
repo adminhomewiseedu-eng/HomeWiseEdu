@@ -53,7 +53,7 @@ export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNum
 
       {concept && <Section label="The Lesson" icon="📖" tone="lesson">
         <div className="doc-reading-copy">{paragraphs(concept).map((text, i) => <p key={i}>{text}</p>)}</div>
-        {notes.teachingNote && <div className="doc-live-note"><strong>Ms. Ade's teaching note</strong><p>{notes.teachingNote}</p></div>}
+        {notes.teachingNote && <div className="doc-live-note"><strong>Ms Ade's teaching note</strong><p>{notes.teachingNote}</p></div>}
         {visualSupport && <aside className="doc-visual-note"><strong>Look and notice</strong><span>{visualSupport}</span></aside>}
       </Section>}
 
@@ -96,10 +96,10 @@ export default function LessonDocView({ lesson, levelLabel = 'Reception', dayNum
 
       {recommendations.length > 0 && <Section label="Reading Recommendation" icon="📚" tone="reading"><p className="doc-compact-copy">{recommendations.join(' · ')}</p></Section>}
 
-      <Section label="Lesson Summary" icon="📝" tone="summary"><p className="doc-compact-copy">{notes.lessonSummary || `Today we are learning ${lesson.topic || lesson.title}. Keep the key idea in mind as you explain your thinking, practise with Ms. Ade, and apply it independently.`}</p></Section>
+      <Section label="Lesson Summary" icon="📝" tone="summary"><p className="doc-compact-copy">{notes.lessonSummary || `Today we are learning ${lesson.topic || lesson.title}. Keep the key idea in mind as you explain your thinking, practise with Ms Ade, and apply it independently.`}</p></Section>
 
       {onProceedToQuiz && <div className="doc-quiz-cta-box">
-        <div><strong>{practiceReady ? 'Lesson discussion complete' : 'Keep learning with Ms. Ade'}</strong><p>{practiceReady ? 'Your practice quiz is ready.' : 'The quiz unlocks after the guided lesson and mastery check.'}</p></div>
+        <div><strong>{practiceReady ? 'Lesson discussion complete' : 'Keep learning with Ms Ade'}</strong><p>{practiceReady ? 'Your practice quiz is ready.' : 'The quiz unlocks after the guided lesson and mastery check.'}</p></div>
         <button className="doc-quiz-btn" onClick={onProceedToQuiz} disabled={!practiceReady}>{practiceReady ? 'Start Practice Quiz 🏆' : 'Practice Quiz Locked'}</button>
       </div>}
     </div>

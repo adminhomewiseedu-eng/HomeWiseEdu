@@ -7,7 +7,10 @@ import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
 import { adaptiveSilenceMs, isStableBargeCandidate, looksLikeTeacherEcho } from '../../utils/voiceTurn';
 import { teacherDeliveryLooksComplete } from '../../utils/teacherDelivery';
-import { nextAuthoritativeRealtimeTurn } from '../../utils/realtimeProgression';
+import {
+  nextAuthoritativeRealtimeTurn,
+  shouldAcknowledgeTeacherDelivery,
+} from '../../utils/realtimeProgression';
 import BrandLogo from '../molecules/BrandLogo';
 
 export default function LessonPlayerScreen({
@@ -57,6 +60,7 @@ export default function LessonPlayerScreen({
   const lastRealtimeStudentTranscriptRef = useRef('');
   const realtimeEventInFlightRef = useRef(false);
   const realtimePhaseInstructionRef = useRef('');
+  const realtimeRequestedTurnRef = useRef(new Set());
   const transcriptHandlerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -440,7 +444,12 @@ export default function LessonPlayerScreen({
   const continueFromAuthority = useCallback((previousPhase, data, realtime = realtimeRef.current) => {
     const nextTurn = nextAuthoritativeRealtimeTurn(previousPhase, data?.pedagogical_state);
     if (!nextTurn || !realtime?.connected) return false;
-    return realtime.createResponse(data.phase_instruction, nextTurn.tag);
+    const requestKey = `${previousPhase || 'RECOVERY'}->${nextTurn.phase}:${nextTurn.tag}`;
+    if (realtimeRequestedTurnRef.current.has(requestKey)) return false;
+    realtimeRequestedTurnRef.current.add(requestKey);
+    const requested = realtime.createResponse(data.phase_instruction, nextTurn.tag);
+    if (!requested) realtimeRequestedTurnRef.current.delete(requestKey);
+    return requested;
   }, []);
 
   const postRealtimeEvent = useCallback(async (event) => {
@@ -465,6 +474,7 @@ export default function LessonPlayerScreen({
     guidanceRequestRef.current += 1;
     realtimeRef.current?.close();
     realtimeRef.current = null;
+    realtimeRequestedTurnRef.current.clear();
     stopAllAudioAndMic();
     ensureAudioContext();
     setHasStartedVoice(true);
@@ -569,7 +579,17 @@ export default function LessonPlayerScreen({
             const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
             const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
               && Boolean(realtimeDeliveryTokenRef.current);
-            if (isAuthoritativeTeacherDelivery && !teacherDeliveryLooksComplete(completedPhase, transcript)) {
+            // WE3 is the final teacher-led demonstration. Once its completed,
+            // uninterrupted audio has drained, the server-issued token is the
+            // delivery authority. A short follow-up acknowledgement after a
+            // learner interjection must not strand the session in WE3.
+            const transcriptComplete = teacherDeliveryLooksComplete(completedPhase, transcript);
+            if (isAuthoritativeTeacherDelivery && !shouldAcknowledgeTeacherDelivery(
+              completedPhase,
+              completed,
+              hadAudio,
+              transcriptComplete,
+            )) {
               realtime.createResponse(
                 `${realtimePhaseInstructionRef.current}\nYour previous turn was only an acknowledgement or ended before the required phase content and direct question. Continue the same phase now. Do not repeat the acknowledgement and do not ask whether the learner is ready.`,
                 'teacher_delivery',
@@ -866,7 +886,7 @@ export default function LessonPlayerScreen({
                 ensureAudioContext();
                 playTutorVoice(lastSpokenText);
               }}
-              title="Replay what Ms. Ade just said"
+              title="Replay what Ms Ade just said"
             >
               🔊 Replay
             </button>

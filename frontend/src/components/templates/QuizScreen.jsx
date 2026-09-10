@@ -213,7 +213,7 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
       <div className={`quiz-voice-bar ${isSpeaking ? 'speaking' : ''}`}>
         <span className="quiz-voice-avatar">{isSpeaking ? '🗣️' : '👩🏾‍🏫'}</span>
         <div>
-          <strong>Ms. Ade</strong>
+          <strong>Ms Ade</strong>
         </div>
       </div>
     </div>

@@ -40,7 +40,7 @@ export default function TutorChatStream({ messages = [], isGenerating = false, o
                   type="button"
                   className="msg-listen-btn"
                   onClick={() => onListenMessage(m.speech_text || m.text)}
-                  title="Listen to Ms. Ade speak this"
+                  title="Listen to Ms Ade speak this"
                 >
                   🔊 Listen
                 </button>

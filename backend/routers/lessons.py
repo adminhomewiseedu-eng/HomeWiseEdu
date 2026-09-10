@@ -325,7 +325,7 @@ def _realtime_phase_directive(
     )
     directives = {
         "GREETING": (
-            f"Warmly welcome {context.get('student_name', 'the learner')} by name as their teacher, Ms. Ade. "
+            f"Warmly welcome {context.get('student_name', 'the learner')} by name as their teacher, Ms Ade. "
             f"Say that you are happy they are here, introduce today's exact topic—{context.get('lesson_topic')}—"
             "in one inviting sentence, and ask if they are ready to begin. Do not start an example yet."
         ),

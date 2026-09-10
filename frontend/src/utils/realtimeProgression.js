@@ -25,9 +25,18 @@ export function nextAuthoritativeRealtimeTurn(previousPhase, state) {
 
   // A newly-entered academic phase needs its backend-bound question spoken
   // once. Once active_question is persisted, silence is intentional.
-  if (ACADEMIC_PHASES.has(phase) && !state.active_question) {
+  if (ACADEMIC_PHASES.has(phase)
+    && (previousPhase !== phase || state.active_phase !== phase || !state.active_question)) {
     return { tag: 'academic_prompt', phase };
   }
 
   return null;
+}
+
+export function shouldAcknowledgeTeacherDelivery(phase, completed, hadAudio, transcriptLooksComplete) {
+  if (!completed || !hadAudio) return false;
+  // WE3 completion is governed by the issued delivery token and drained
+  // Realtime audio. A short follow-up after an interjection is not grounds to
+  // withhold that token and strand the authoritative state machine.
+  return phase === 'WORKED_EXAMPLE_3' || transcriptLooksComplete;
 }

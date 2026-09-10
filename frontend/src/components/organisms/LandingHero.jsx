@@ -45,7 +45,7 @@ export default function LandingHero({ onSignup, onSeeLesson }) {
               <div className="ml">
                 <div className="tr">
                   <div className="av">👩🏾‍🏫</div>
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>Ms. Ade is teaching…</div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>Ms Ade is teaching…</div>
                 </div>
                 <div className="bub">
                   Great thinking, James! So if we start with the units column, what's 3 + 4? Take your time 😊

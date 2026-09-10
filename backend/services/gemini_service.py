@@ -54,7 +54,7 @@ async def get_tutor_guidance(
     Follows PRD: 'Structured curriculum FIRST, AI support SECOND. We are not building a chatbot.'
     """
     system_prompt = (
-        f"You are Ms. Ade, an encouraging, wise, and patient homeschooling AI tutor for HomeWiseEdu. "
+        f"You are Ms Ade, an encouraging, wise, and patient homeschooling AI tutor for HomeWiseEdu. "
         f"You are guiding {student_name} through their structured lesson on '{lesson_title}' in {subject}. "
         f"Keep your tone warm, concise (2-3 sentences max), and focused strictly on the current tab: '{current_tab_name}'. "
         f"Use friendly emojis occasionally. Always prompt them gently to read, think, and tap 'Got it' when ready."
@@ -67,7 +67,7 @@ async def get_tutor_guidance(
     if not ai_reply:
         # High quality fallback tailored to the 5 tabs
         fallbacks = {
-            "Objectives": f"Hi {student_name}! 👋 I'm Ms. Ade. Today we're exploring {lesson_title}. Take a look at our goals on the left—you're going to do great today! 🌟",
+            "Objectives": f"Hi {student_name}! 👋 I'm Ms Ade. Today we're exploring {lesson_title}. Take a look at our goals on the left—you're going to do great today! 🌟",
             "Learn": f"A fraction shows part of a whole, {student_name}. When we say equivalent, think of two pizzas cut into different slices—the amount you eat stays exactly the same! 🍕",
             "Examples": f"Look closely at the examples on the left! See how multiplying the top and bottom by 2 keeps the exact same value? You're doing brilliantly!",
             "Words": f"Let's master the key vocabulary, {student_name}. The top number is the numerator, and the bottom is the denominator. Knowing these makes everything easier! ✨",

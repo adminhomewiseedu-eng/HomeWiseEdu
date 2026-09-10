@@ -7,7 +7,7 @@ export default function TutorHeader({ isSpeaking, onStopAudio, studentName = 'St
         👩🏾‍🏫
       </div>
       <div style={{ flex: 1 }}>
-        <div className="tn">Ms. Ade · Live AI Homeschool Tutor</div>
+        <div className="tn">Ms Ade · Live AI Homeschool Tutor</div>
         <div className="status">
           <div className={`wavebars ${isSpeaking ? 'on' : ''}`}>
             <i></i><i></i><i></i><i></i>

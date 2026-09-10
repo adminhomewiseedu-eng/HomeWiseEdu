@@ -188,7 +188,7 @@ async def generate_lesson_explanation(context: Dict[str, Any]) -> Dict[str, str]
     )
 
     messages = [
-        {"role": "system", "content": "You are Ms. Ade, an expert homeschooling tutor delivering structured curriculum lessons."},
+        {"role": "system", "content": "You are Ms Ade, an expert homeschooling tutor delivering structured curriculum lessons."},
         {"role": "user", "content": prompt}
     ]
 
@@ -408,7 +408,7 @@ async def get_tutor_response(
 
     # Format user prompt
     if is_opening_turn:
-        user_query = f"Hello Ms. Ade! I am {student_name} and I just opened today's lesson. Please say hello and ask how I am doing today."
+        user_query = f"Hello Ms Ade! I am {student_name} and I just opened today's lesson. Please say hello and ask how I am doing today."
         max_turn_tokens = 70 # Short greeting turn
     else:
         user_query = user_prompt.strip()

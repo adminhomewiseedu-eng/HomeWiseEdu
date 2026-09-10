@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextAuthoritativeRealtimeTurn } from './realtimeProgression.js';
+import {
+  nextAuthoritativeRealtimeTurn,
+  shouldAcknowledgeTeacherDelivery,
+} from './realtimeProgression.js';
 
 test('waits for the learner after the opening greeting', () => {
   assert.equal(nextAuthoritativeRealtimeTurn('GREETING', { current_phase: 'TEACHING' }), null);
@@ -16,9 +19,25 @@ test('deterministically chains every worked-example boundary', () => {
 
 test('issues the understanding check once after worked example three', () => {
   assert.deepEqual(nextAuthoritativeRealtimeTurn('WORKED_EXAMPLE_3', { current_phase: 'UNDERSTANDING_CHECK', active_question: '' }), { tag: 'academic_prompt', phase: 'UNDERSTANDING_CHECK' });
-  assert.equal(nextAuthoritativeRealtimeTurn('UNDERSTANDING_CHECK', { current_phase: 'UNDERSTANDING_CHECK', active_question: 'What comes after four?' }), null);
+  assert.deepEqual(nextAuthoritativeRealtimeTurn('WORKED_EXAMPLE_3', {
+    current_phase: 'UNDERSTANDING_CHECK',
+    active_phase: 'UNDERSTANDING_CHECK',
+    active_question: 'What comes after four?',
+  }), { tag: 'academic_prompt', phase: 'UNDERSTANDING_CHECK' });
+  assert.equal(nextAuthoritativeRealtimeTurn('UNDERSTANDING_CHECK', {
+    current_phase: 'UNDERSTANDING_CHECK',
+    active_phase: 'UNDERSTANDING_CHECK',
+    active_question: 'What comes after four?',
+  }), null);
 });
 
 test('does not create a turn after practice becomes ready', () => {
   assert.equal(nextAuthoritativeRealtimeTurn('LESSON_SUMMARY', { current_phase: 'PRACTICE_READY', practice_ready: true }), null);
+});
+
+test('acknowledges drained WE3 audio even when the final follow-up is short', () => {
+  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', true, true, false), true);
+  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_2', true, true, false), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', false, true, true), false);
+  assert.equal(shouldAcknowledgeTeacherDelivery('WORKED_EXAMPLE_3', true, false, true), false);
 });

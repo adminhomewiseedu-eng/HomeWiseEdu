@@ -82,7 +82,7 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
           <div className="quiz-complete-copy">
             <span>Quiz complete</span>
             <h1>Wonderful effort, {studentName}!</h1>
-            <p>Ms. Ade is proud of your work. Add one piece of learning evidence to complete today’s lesson.</p>
+            <p>Ms Ade is proud of your work. Add one piece of learning evidence to complete today’s lesson.</p>
           </div>
           <div className="quiz-result-score">
             <strong>{quizScore}/{quizTotal}</strong>
@@ -105,12 +105,12 @@ export default function EvidenceSubmitScreen({ lesson, lessonId, dayNumber = 1, 
           </div>
           <aside className="evidence-next-card">
             <div className="evidence-tutor-avatar">👩🏾‍🏫</div>
-            <span className="evidence-eyebrow">Ms. Ade</span>
+            <span className="evidence-eyebrow">Ms Ade</span>
             <h2>{tutorStatus}</h2>
             <p>Your explanation or uploaded work helps build a real learning portfolio—not just a quiz score.</p>
             <div className="evidence-next-steps">
               <div><b>1</b><span>Share what you learned</span></div>
-              <div><b>2</b><span>Ms. Ade evaluates it</span></div>
+              <div><b>2</b><span>Ms Ade evaluates it</span></div>
               <div><b>3</b><span>Verified work enters your portfolio</span></div>
             </div>
           </aside>

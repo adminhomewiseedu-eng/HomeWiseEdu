@@ -93,7 +93,7 @@ export default function TutorControls({
         <input
           type="text"
           className="tutor-text-input"
-          placeholder="Type your answer to Ms. Ade..."
+          placeholder="Type your answer to Ms Ade..."
           value={inputText}
           onChange={(e) => {
             setInputText(e.target.value);
