@@ -62,8 +62,8 @@ def test_production_flow_populates_and_preserves_active_question_on_clarificatio
         })
     assert response.status_code == 200, response.text
     state_after = response.json()["pedagogical_state"]
-    assert state_after["active_question"] == "How many stars are there?"
-    assert state_after["active_task"] == "How many stars are there?"
+    assert state_after["active_question"] == "What number comes after four when we count to five?"
+    assert state_after["active_task"] == state_after["active_question"]
     assert state_after["active_phase"] == "UNDERSTANDING_CHECK"
     assert state_after["active_expected_concept"]
 

@@ -349,14 +349,20 @@ async def get_tutor_response(
         elif current_phase == "GREETING":
             phase_directive += "INSTRUCTION: Greet the student warmly by name and ask how they are doing today. STOP immediately and yield the mic."
         elif current_phase == "TEACHING":
-            phase_directive += (
-                f"INSTRUCTION: Begin the scheduled lesson now. Briefly greet {student_name} by name, "
-                f"clearly introduce today's lesson '{context.get('lesson_title', '')}', and explain the "
-                "core concept in 2-3 friendly, age-appropriate sentences. Ask ONE simple, lesson-specific "
-                "question about what the learner already knows or has noticed in real life, then STOP and "
-                "yield the mic. Never ask 'What can I do for you today?' and never wait for the learner to "
-                "say 'proceed'. Do not ask for mastery yet."
-            )
+            if context.get("level") == 0:
+                phase_directive += (
+                    f"INSTRUCTION: Begin the scheduled lesson '{context.get('lesson_title', '')}' now. "
+                    "Explain and model the concrete counting concept from the authored note. The teacher does "
+                    "the demonstration. Do not ask 'what did you notice?', another abstract reflection question, "
+                    "or a mastery question. End by clearly introducing the three teacher-led examples, then STOP."
+                )
+            else:
+                phase_directive += (
+                    f"INSTRUCTION: Begin the scheduled lesson now. Briefly address {student_name} by name, "
+                    f"clearly introduce today's lesson '{context.get('lesson_title', '')}', explain the core "
+                    "concept in 2-3 friendly, age-appropriate sentences, and transition to the teacher-led "
+                    "worked examples. Do not ask for mastery yet."
+                )
         elif current_phase == "WORKED_EXAMPLE_1":
             phase_directive += "INSTRUCTION: Deliver Worked Example 1. If student responded to an interactive step, warmly acknowledge and complete the example. Transition naturally to Worked Example 2."
         elif current_phase == "WORKED_EXAMPLE_2":

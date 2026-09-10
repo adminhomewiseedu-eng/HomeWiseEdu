@@ -70,7 +70,7 @@ def test_realtime_delivery_tokens_enforce_all_three_worked_examples():
     assert data["pedagogical_state"]["practice_ready"] is False
 
 
-def test_teacher_delivery_ends_with_an_explicit_named_handoff_question():
+def test_level_zero_teaching_is_concrete_and_does_not_ask_abstract_reflection():
     child_id, headers = parent_and_child("handoff")
     greeting = event(headers, child_id, "start_class").json()
     teaching = event(
@@ -81,8 +81,9 @@ def test_teacher_delivery_ends_with_an_explicit_named_handoff_question():
     ).json()
 
     assert teaching["pedagogical_state"]["current_phase"] == "TEACHING"
-    assert "Realtime Child, what did you notice in that step?" in teaching["phase_instruction"]
-    assert "Do not end with 'let's try'" in teaching["phase_instruction"]
+    assert "model the counting yourself" in teaching["phase_instruction"]
+    assert "Do not ask abstract reflection questions" in teaching["phase_instruction"]
+    assert "three examples" in teaching["phase_instruction"]
     assert "Never produce a standalone acknowledgement" in teaching["phase_instruction"]
 
 
@@ -203,13 +204,16 @@ def test_complete_realtime_lesson_progresses_deterministically_to_practice_ready
     state = data["pedagogical_state"]
     assert state["worked_examples_completed"] == 3
     assert state["worked_examples_delivered"] == {"1": True, "2": True, "3": True}
-    assert state["active_question"] == ""
+    assert state["active_question"] == "What number comes after four when we count to five?"
+    assert state["active_phase"] == "UNDERSTANDING_CHECK"
+    assert state["active_task"] == state["active_question"]
     assert state["practice_ready"] is False
+    assert state["active_question"] in data["phase_instruction"]
 
     question = event(headers, child_id, "assistant_response_completed", assistant_response="If we count one, two, three, four, what number comes next?")
     assert question.status_code == 200, question.text
     data = question.json()
-    assert data["pedagogical_state"]["active_question"] == "If we count one, two, three, four, what number comes next?"
+    assert data["pedagogical_state"]["active_question"] == "What number comes after four when we count to five?"
 
     with patch("backend.routers.lessons.evaluate_academic_response", new=AsyncMock(return_value={"result": "correct", "feedback": "Correct"})):
         for phase, answer, next_phase, next_question in [

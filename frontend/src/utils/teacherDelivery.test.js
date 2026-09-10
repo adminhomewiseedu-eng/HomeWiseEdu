@@ -23,10 +23,10 @@ test('rejects a long teaching turn that ends with only a vague invitation', () =
   ), false);
 });
 
-test('accepts a complete teaching turn ending in a concrete counting task', () => {
+test('accepts a complete teacher-led Level 0 explanation without an abstract question', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'TEACHING',
-    'We count each object once and keep the numbers in order. I counted one, two, three, four, five. That tells us there are five objects altogether. Juliet, can you count from one to five for me?',
+    'Counting tells us how many objects there are. We say one, two, three, four, five in order while Ms Ade points to each cube once. Next, I will show you three examples.',
   ), true);
 });
 

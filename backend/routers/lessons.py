@@ -244,6 +244,33 @@ def populate_active_academic_state(state: Dict[str, Any], guidance: Dict[str, An
     state["active_expected_concept"] = str(expected)[:1000]
     state["active_phase"] = phase
 
+
+def ensure_understanding_check_question(state: Dict[str, Any], context: Dict[str, Any]) -> None:
+    """Create the first formal check as backend-owned state before Realtime speaks it."""
+    if state.get("current_phase") != "UNDERSTANDING_CHECK":
+        return
+    if state.get("active_phase") == "UNDERSTANDING_CHECK" and state.get("active_question"):
+        return
+
+    level = context.get("level")
+    topic = str(context.get("lesson_topic") or "").lower()
+    if level == 0 and ("count" in topic or "number" in topic):
+        question = "What number comes after four when we count to five?"
+        expected = "The learner answers five."
+    else:
+        practice_questions = context.get("practice_questions") or []
+        authored_question = next(
+            (str(item).strip() for item in practice_questions if str(item).strip().endswith("?")),
+            "",
+        )
+        question = authored_question or f"What is one important thing you learned about {context.get('lesson_topic', 'this lesson')}?"
+        expected = str(context.get("key_concept") or question)[:1000]
+
+    state["active_question"] = question
+    state["active_task"] = question
+    state["active_expected_concept"] = expected
+    state["active_phase"] = "UNDERSTANDING_CHECK"
+
 class SessionUpdate(BaseModel):
     model_config = {"extra": "forbid"}
     child_id: int
@@ -285,6 +312,7 @@ def _lesson_context(lesson, active_day, child) -> Dict[str, Any]:
         "key_concept": (active_day.key_concept if active_day else None) or lesson.learn_content or "",
         "ai_script": active_day.ai_script if active_day else "",
         "examples": authored_worked_examples(lesson, active_day),
+        "practice_questions": active_day.practice_questions if active_day else [],
         "real_world_context": (active_day.real_world_context if active_day else None) or "Use an age-appropriate everyday example.",
     }
 
@@ -305,6 +333,7 @@ def _realtime_phase_directive(
     example_one = json.dumps(examples[0], ensure_ascii=True) if len(examples) > 0 else "the first curriculum example"
     example_two = json.dumps(examples[1], ensure_ascii=True) if len(examples) > 1 else "the second curriculum example"
     example_three = json.dumps(examples[2], ensure_ascii=True) if len(examples) > 2 else "the third curriculum example"
+    is_level_zero = context.get("level") == 0
     common = (
         f"Authoritative phase: {phase}. Do not advance beyond this phase yourself. "
         f"The learner's name is {context.get('student_name', 'Student')}. Address the learner by name naturally "
@@ -332,10 +361,15 @@ def _realtime_phase_directive(
         "TEACHING": (
             "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
             "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
-            "content from the note. Do not ask the learner to find or provide materials. After a useful explanation "
-            f"and demonstration, you MUST finish with this direct handoff question: '{context.get('student_name', 'Student')}, "
-            "what did you notice in that step?' Do not end with 'let's try', 'let's continue', or another unfinished "
-            "transition. Ask the question, then stop and wait for the learner's answer."
+            "content from the note. Do not ask the learner to find or provide materials. "
+            + (
+                "For this Level 0 lesson, model the counting yourself using the exact numbers and objects in the note. "
+                "Do not ask abstract reflection questions such as 'what did you notice?' and do not test the learner yet. "
+                "Finish the complete explanation with a clear sentence that the teacher will now show three examples, then stop."
+                if is_level_zero else
+                "Finish the complete explanation with a clear transition into the three teacher-led worked examples, then stop. "
+                "Do not ask a formal question in this phase."
+            )
         ),
         "WORKED_EXAMPLE_1": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_one}. "
@@ -353,7 +387,10 @@ def _realtime_phase_directive(
             "formal understanding-check question and do not use the learner's response as evidence. End with one "
             "complete transition sentence, then stop. The app will separately authorize the understanding check."
         ),
-        "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
+        "UNDERSTANDING_CHECK": (
+            f"Ask this exact backend-owned understanding-check question: '{state.get('active_question')}'. "
+            "Ask it once, then stop and wait for the learner. Do not add a second question."
+        ),
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",
         "APPLICATION": "Give one curriculum-grounded real-life application task and wait for the learner.",
         "MASTERY_CHECK": "Ask exactly one independent mastery question and wait for the learner.",
@@ -423,6 +460,7 @@ async def realtime_pedagogy_event(
             context=context,
             event_type="teacher_delivery_completed",
         )
+        ensure_understanding_check_question(state, context)
     elif payload.event_type == "academic_response":
         phase = state.get("current_phase")
         if phase not in ACADEMIC_PHASES:
@@ -638,6 +676,7 @@ async def tutor_chat_guidance(
             req.user_prompt,
             context=context,
         )
+    ensure_understanding_check_question(new_ped_state, context)
 
     guidance = await get_tutor_response(
         student_name=student_name,
