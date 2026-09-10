@@ -67,6 +67,21 @@ class ParentProfileUpdate(BaseModel):
     postal_code: Optional[str] = None
     country: Optional[str] = None
 
+class AdminProfileUpdate(ParentProfileUpdate):
+    model_config = ConfigDict(extra="forbid")
+
+class AdminChangePassword(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_admin_password(cls, value: str) -> str:
+        if len(value) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return value
+
 class AdminParentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     first_name: str

@@ -132,7 +132,7 @@ export default function App() {
         <Route path="/submit" element={<EvidenceSubmitScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} quizResult={quizResultData} onExit={() => go('/student')} onSubmitSuccess={() => go('/complete')} />} />
         <Route path="/complete" element={<LessonCompleteScreen child={activeChild} quizResult={quizResultData} onViewPortfolio={() => go('/portfolio')} onNextLesson={() => go('/student')} />} />
         <Route path="/portfolio" element={<PortfolioScreen child={activeChild} onBack={() => go(currentUser?.role === 'student' ? '/student' : '/parent')} />} />
-        <Route path="/admin/*" element={currentUser?.role === 'admin' ? <AdminDashboardScreen onExit={handleLogout} /> : <Navigate to={currentUser ? '/parent' : '/login'} replace />} />
+        <Route path="/admin/*" element={currentUser?.role === 'admin' ? <AdminDashboardScreen currentUser={currentUser} onProfileUpdated={(profile) => setCurrentUser({ ...currentUser, name: profile.name, avatar: profile.first_name?.[0]?.toUpperCase() || currentUser.avatar })} onExit={handleLogout} /> : <Navigate to={currentUser ? '/parent' : '/login'} replace />} />
       </Routes>
     </div>
   );

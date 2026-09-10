@@ -5,22 +5,40 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from ..config import settings
 from ..database import get_db
-from ..models import (AIInteraction, Child, ChildSubject, LearningEvidence, Lesson, LessonDay,
+from ..models import (AIInteraction, AdminProfile, Child, ChildSubject, LearningEvidence, Lesson, LessonDay,
                       LessonSession, ParentProfile, PasswordResetToken, StudentProgress, Subject, Unit, User)
-from ..schemas import AdminParentCreate, AdminParentStatusUpdate, AdminParentUpdate
+from ..schemas import AdminChangePassword, AdminParentCreate, AdminParentStatusUpdate, AdminParentUpdate, AdminProfileUpdate
 from ..services.password_reset_email import email_delivery_configured, send_password_reset_email
+from ..services.storage_service import delete_profile_image, save_profile_image
 from ..utils.levels import get_level_label
-from .auth import get_password_hash, require_admin
+from .auth import get_password_hash, require_admin, verify_password
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 PUBLISHED = {"active", "published"}
+
+
+def _admin_profile_payload(admin: User, profile: AdminProfile | None) -> dict:
+    parts = (admin.name or "").strip().split(maxsplit=1)
+    first = profile.first_name if profile and profile.first_name is not None else (parts[0] if parts else "")
+    last = profile.last_name if profile and profile.last_name is not None else (parts[1] if len(parts) > 1 else "")
+    return {
+        "id": admin.id, "first_name": first, "last_name": last, "name": admin.name,
+        "email": admin.email, "phone_number": profile.phone_number if profile else None,
+        "address_line_1": profile.address_line_1 if profile else None,
+        "address_line_2": profile.address_line_2 if profile else None,
+        "city": profile.city if profile else None, "state_region": profile.state_region if profile else None,
+        "postal_code": profile.postal_code if profile else None, "country": profile.country if profile else None,
+        "profile_image_url": "/api/admin/profile/image" if profile and profile.profile_image_name else None,
+        "role": "Administrator", "account_status": (admin.account_status or "active").title(),
+        "joined_at": admin.created_at, "updated_at": admin.updated_at,
+    }
 
 
 def _published_lesson(lesson: Lesson) -> bool:
@@ -368,14 +386,76 @@ def ai_monitoring(db: Session = Depends(get_db), current_user: User = Depends(re
 
 @router.get("/settings")
 def admin_settings(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    return {"platform": {"name": settings.PROJECT_NAME, "support_email": None, "environment": settings.ENVIRONMENT},
+    return {"platform": {"name": "HomeWiseEdu", "domain": "homewiseedu.com", "support_email": "support@homewiseedu.com", "environment": settings.ENVIRONMENT},
             "academic": {"education_systems": ["UK", "USA", "Canada", "Australia"], "levels": list(range(14)),
                          "subjects": [subject.title for subject in db.query(Subject).order_by(Subject.title.asc()).all()]},
             "ai": {"openai": "configured" if settings.OPENAI_API_KEY else "not_configured",
                    "openai_model": settings.OPENAI_MODEL if settings.OPENAI_API_KEY else None,
-                   "elevenlabs": "configured" if settings.ELEVENLABS_API_KEY else "not_configured",
-                   "voice_id": "configured" if settings.ELEVENLABS_VOICE_ID else "not_configured"},
+                   "realtime": "configured" if settings.OPENAI_API_KEY else "not_configured",
+                   "realtime_model": settings.OPENAI_REALTIME_MODEL if settings.OPENAI_API_KEY else None,
+                   "active_voice_provider": "OpenAI Realtime/WebRTC",
+                   "elevenlabs_active_classroom": False},
             "subscriptions": {"stripe": "not_connected"}}
+
+
+@router.get("/profile")
+def get_admin_profile(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    return _admin_profile_payload(current_user, current_user.admin_profile)
+
+
+@router.patch("/profile")
+def update_admin_profile(changes: AdminProfileUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    profile = current_user.admin_profile or AdminProfile(user_id=current_user.id)
+    if not current_user.admin_profile:
+        db.add(profile)
+    for field, value in changes.model_dump(exclude_unset=True).items():
+        setattr(profile, field, value.strip() if isinstance(value, str) else value)
+    parts = (current_user.name or "").split(maxsplit=1)
+    first = profile.first_name or (parts[0] if parts else "")
+    last = profile.last_name or (parts[1] if len(parts) > 1 else "")
+    current_user.name = " ".join(part for part in (first, last) if part).strip()
+    current_user.avatar = (first or last or "A")[0].upper()
+    current_user.updated_at = datetime.datetime.utcnow()
+    db.commit(); db.refresh(current_user)
+    return _admin_profile_payload(current_user, profile)
+
+
+@router.post("/profile/image")
+async def upload_admin_profile_image(image: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    profile = current_user.admin_profile or AdminProfile(user_id=current_user.id)
+    if not current_user.admin_profile:
+        db.add(profile)
+    old_name = profile.profile_image_name
+    profile.profile_image_name = await save_profile_image(image)
+    current_user.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    delete_profile_image(old_name)
+    return {"profile_image_url": "/api/admin/profile/image"}
+
+
+@router.get("/profile/image")
+def admin_profile_image(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    profile = current_user.admin_profile
+    if not profile or not profile.profile_image_name:
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    root = Path(settings.PROFILE_IMAGE_DIR).resolve()
+    target = (root / profile.profile_image_name).resolve()
+    if target.parent != root or not target.is_file():
+        raise HTTPException(status_code=404, detail="Profile picture is not available")
+    return FileResponse(target)
+
+
+@router.post("/change-password")
+def change_admin_password(payload: AdminChangePassword, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if verify_password(payload.new_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="New password must be different from the current password")
+    current_user.password_hash = get_password_hash(payload.new_password)
+    current_user.auth_version = (current_user.auth_version or 0) + 1
+    current_user.updated_at = datetime.datetime.utcnow()
+    db.commit()
+    return {"message": "Password changed successfully. Please log in again."}
 
 
 @router.get("/content")

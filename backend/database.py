@@ -22,6 +22,14 @@ def ensure_db_schema():
     if not settings.DATABASE_URL.startswith("sqlite") or settings.is_production:
         return
     with engine.begin() as conn:
+        conn.execute(text("""CREATE TABLE IF NOT EXISTS admin_profiles (
+            id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL UNIQUE,
+            first_name VARCHAR, last_name VARCHAR, phone_number VARCHAR,
+            address_line_1 VARCHAR, address_line_2 VARCHAR, city VARCHAR,
+            state_region VARCHAR, postal_code VARCHAR, country VARCHAR,
+            profile_image_name VARCHAR, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )"""))
         user_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(users)"))]
         if user_columns and "auth_version" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0"))

@@ -178,6 +178,14 @@ export const adminAPI = {
   getReports: () => api.get('/api/admin/reports'),
   getAIMonitoring: () => api.get('/api/admin/ai-monitoring'),
   getSettings: () => api.get('/api/admin/settings'),
+  getProfile: () => api.get('/api/admin/profile'),
+  updateProfile: (payload) => api.patch('/api/admin/profile', payload),
+  uploadProfileImage: (image) => {
+    const form = new FormData(); form.append('image', image);
+    return api.post('/api/admin/profile/image', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  getProfileImage: () => api.get('/api/admin/profile/image', { responseType: 'blob' }),
+  changePassword: (currentPassword, newPassword) => api.post('/api/admin/change-password', { current_password: currentPassword, new_password: newPassword }),
   getContent: () => api.get('/api/admin/content'),
 };
 
