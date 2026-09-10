@@ -11,6 +11,7 @@ import {
   nextAuthoritativeRealtimeTurn,
   shouldAcknowledgeTeacherDelivery,
 } from '../../utils/realtimeProgression';
+import { deferRealtimeCompletion, drainRealtimeCompletion } from '../../utils/realtimeCompletionQueue';
 import BrandLogo from '../molecules/BrandLogo';
 
 export default function LessonPlayerScreen({
@@ -59,6 +60,7 @@ export default function LessonPlayerScreen({
   const realtimeDeliveryTokenRef = useRef(null);
   const lastRealtimeStudentTranscriptRef = useRef('');
   const realtimeEventInFlightRef = useRef(false);
+  const pendingRealtimeTutorDoneRef = useRef(null);
   const realtimePhaseInstructionRef = useRef('');
   const realtimeRequestedTurnRef = useRef(new Set());
   const transcriptHandlerRef = useRef(null);
@@ -548,13 +550,25 @@ export default function LessonPlayerScreen({
             }, 'Backend validation failed. Do not advance. Briefly ask the learner to try the same question again.');
           } finally {
             realtimeEventInFlightRef.current = false;
+            drainRealtimeCompletion(
+              pendingRealtimeTutorDoneRef,
+              isMountedRef.current && realtime.connected,
+              (pendingCompletion) => realtime.handlers.onTutorDone?.(pendingCompletion),
+            );
           }
         },
         onTutorDone: async ({ completed, transcript, hadAudio, responseTag }) => {
           if (!isMountedRef.current || isVoicePausedRef.current) return;
           updateVoiceStatus('listening');
           setMicActive(true);
-          if (!completed || !hadAudio || realtimeEventInFlightRef.current) return;
+          if (!completed || !hadAudio) return;
+          if (realtimeEventInFlightRef.current) {
+            deferRealtimeCompletion(
+              pendingRealtimeTutorDoneRef,
+              { completed, transcript, hadAudio, responseTag },
+            );
+            return;
+          }
           const completedPhase = realtimeStateRef.current?.current_phase || null;
           if (transcript) {
             setLastSpokenText(transcript);
@@ -659,6 +673,11 @@ export default function LessonPlayerScreen({
             }
           } finally {
             realtimeEventInFlightRef.current = false;
+            drainRealtimeCompletion(
+              pendingRealtimeTutorDoneRef,
+              isMountedRef.current && realtime.connected,
+              (pendingCompletion) => realtime.handlers.onTutorDone?.(pendingCompletion),
+            );
           }
         },
         onConnectionState: (health) => {
