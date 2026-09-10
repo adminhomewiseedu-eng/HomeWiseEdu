@@ -96,3 +96,29 @@ it('stops remote teacher audio when the realtime classroom closes', () => {
   assert.equal(paused, 1);
   assert.equal(realtime.audio, null);
 });
+
+it('waits for the WebRTC output buffer to drain before completing teacher delivery', () => {
+  const completed = [];
+  const realtime = new RealtimeClassroom({ onTutorDone: (event) => completed.push(event) });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'response-a' } });
+  realtime.handleEvent({ type: 'response.output_audio.delta', response_id: 'response-a', delta: 'audio' });
+  realtime.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'response-a', transcript: 'The complete example.' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'response-a', status: 'completed', output: [] } });
+  assert.equal(completed.length, 0);
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'response-a' });
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].transcript, 'The complete example.');
+});
+
+it('deduplicates repeated response and audio completion events', () => {
+  let completions = 0;
+  const realtime = new RealtimeClassroom({ onTutorDone: () => { completions += 1; } });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'response-b' } });
+  realtime.handleEvent({ type: 'response.output_audio.delta', response_id: 'response-b', delta: 'audio' });
+  const done = { type: 'response.done', response: { id: 'response-b', status: 'completed', output: [] } };
+  realtime.handleEvent(done);
+  realtime.handleEvent(done);
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'response-b' });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'response-b' });
+  assert.equal(completions, 1);
+});

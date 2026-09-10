@@ -1,9 +1,6 @@
 const QUESTION_PHASES = new Set([
   'GREETING',
   'TEACHING',
-  'WORKED_EXAMPLE_1',
-  'WORKED_EXAMPLE_2',
-  'WORKED_EXAMPLE_3',
   'UNDERSTANDING_CHECK',
   'GUIDED_PRACTICE',
   'APPLICATION',
@@ -29,6 +26,8 @@ export function teacherDeliveryLooksComplete(phase, transcript) {
   if (!minimum) return false;
   if (text.split(/\s+/).filter(Boolean).length < minimum) return false;
   if (/\b(?:find|fetch|pick up|hold up|describe)\b[^.!?]{0,60}\bobjects?\b/i.test(text)) return false;
+  if (/^WORKED_EXAMPLE_[123]$/.test(phase)
+    && !/\b(answer|altogether|total|makes?|equals?|comes?|there (?:are|is)|we (?:have|get|counted))\b/i.test(text)) return false;
   if (QUESTION_PHASES.has(phase) && !text.includes('?')) return false;
   if (QUESTION_PHASES.has(phase) && phase !== 'GREETING') {
     const questionEnd = text.lastIndexOf('?');

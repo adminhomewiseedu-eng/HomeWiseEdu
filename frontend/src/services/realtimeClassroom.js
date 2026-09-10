@@ -12,6 +12,8 @@ export class RealtimeClassroom {
     this.responseHasAudio = false;
     this.nextResponseTag = null;
     this.responseTag = null;
+    this.responseStates = new Map();
+    this.completedResponseIds = new Set();
     this.marks = {};
     this.diagnosticsEnabled = Boolean(import.meta.env?.DEV);
   }
@@ -23,6 +25,10 @@ export class RealtimeClassroom {
   mark(name) {
     this.marks[name] = now();
     if (!this.diagnosticsEnabled) return;
+    if (['response_created', 'response_completed', 'response_cancelled', 'response_audio_done',
+      'output_audio_buffer_stopped', 'output_audio_buffer_cleared', 'interruption_cancellation'].includes(name)) {
+      console.info('[Realtime progression]', { event: name, timestamp: Math.round(this.marks[name]) });
+    }
     if (name === 'first_audio_delta' && this.marks.speech_stopped) {
       console.info('[Realtime latency]', {
         speechEndToResponseCreatedMs: this.marks.response_created
@@ -121,20 +127,29 @@ export class RealtimeClassroom {
       return;
     }
     if (event.type === 'response.created') {
+      const responseId = event.response?.id || null;
       this.responseTranscript = '';
       this.responseHasAudio = false;
       this.responseTag = this.nextResponseTag;
       this.nextResponseTag = null;
+      if (responseId) this.responseStates.set(responseId, {
+        transcript: '', hadAudio: false, responseTag: this.responseTag,
+        response: event.response, responseDone: false, audioStopped: false,
+      });
       this.mark('response_created');
       this.handlers.onResponseCreated?.(event.response);
       return;
     }
     if (event.type === 'response.output_audio_transcript.delta') {
       this.responseTranscript += event.delta || '';
+      const state = this.responseStates.get(event.response_id);
+      if (state) state.transcript += event.delta || '';
       return;
     }
     if (event.type === 'response.output_audio_transcript.done') {
       this.responseTranscript = String(event.transcript || this.responseTranscript).trim();
+      const state = this.responseStates.get(event.response_id);
+      if (state) state.transcript = this.responseTranscript;
       return;
     }
     if (event.type === 'response.output_audio.delta' || event.type === 'response.audio.delta') {
@@ -145,13 +160,35 @@ export class RealtimeClassroom {
         }
       }
       this.responseHasAudio = true;
+      const state = this.responseStates.get(event.response_id);
+      if (state) state.hadAudio = true;
       this.handlers.onTutorSpeaking?.();
+      return;
+    }
+    if (event.type === 'response.output_audio.done' || event.type === 'response.audio.done') {
+      this.mark('response_audio_done');
+      return;
+    }
+    if (event.type === 'output_audio_buffer.stopped') {
+      this.mark('output_audio_buffer_stopped');
+      const state = this.responseStates.get(event.response_id);
+      if (state) {
+        state.audioStopped = true;
+        this.finalizeResponse(event.response_id);
+      }
+      return;
+    }
+    if (event.type === 'output_audio_buffer.cleared') {
+      this.mark('output_audio_buffer_cleared');
       return;
     }
     if (event.type === 'response.done') {
       this.mark(event.response?.status === 'cancelled' ? 'response_cancelled' : 'response_completed');
+      const responseId = event.response?.id || null;
+      if (responseId && this.completedResponseIds.has(responseId)) return;
       const functionCalls = (event.response?.output || []).filter((item) => item.type === 'function_call');
       if (functionCalls.length) {
+        if (responseId) this.completedResponseIds.add(responseId);
         functionCalls.forEach((call) => this.handlers.onToolCall?.({
           name: call.name,
           callId: call.call_id,
@@ -159,23 +196,49 @@ export class RealtimeClassroom {
         }));
         return;
       }
-      const completed = event.response?.status === 'completed';
-      if (this.pendingSpeech) {
-        this.pendingSpeech.resolve(completed);
-        this.pendingSpeech = null;
+      const state = responseId ? this.responseStates.get(responseId) : null;
+      if (state) {
+        state.response = event.response;
+        state.responseDone = true;
+        this.finalizeResponse(responseId);
+      } else {
+        this.emitTutorDone(responseId, event.response, {
+          transcript: this.responseTranscript, hadAudio: this.responseHasAudio,
+          responseTag: this.responseTag, audioStopped: false,
+        });
       }
-      this.handlers.onTutorDone?.({
-        completed,
-        status: event.response?.status,
-        transcript: this.responseTranscript.trim(),
-        hadAudio: this.responseHasAudio,
-        responseTag: this.responseTag,
-      });
       return;
     }
     if (event.type === 'error') {
       this.handlers.onError?.(event.error?.message || 'Realtime session error');
     }
+  }
+
+  finalizeResponse(responseId) {
+    const state = this.responseStates.get(responseId);
+    if (!state?.responseDone) return;
+    const completed = state.response?.status === 'completed';
+    if (completed && state.hadAudio && !state.audioStopped) return;
+    this.emitTutorDone(responseId, state.response, state);
+    this.responseStates.delete(responseId);
+  }
+
+  emitTutorDone(responseId, response, state) {
+    if (responseId && this.completedResponseIds.has(responseId)) return;
+    if (responseId) this.completedResponseIds.add(responseId);
+    const completed = response?.status === 'completed';
+    if (this.pendingSpeech) {
+      this.pendingSpeech.resolve(completed);
+      this.pendingSpeech = null;
+    }
+    this.handlers.onTutorDone?.({
+      completed,
+      status: response?.status,
+      transcript: String(state.transcript || '').trim(),
+      hadAudio: Boolean(state.hadAudio),
+      responseTag: state.responseTag,
+      responseId,
+    });
   }
 
   updateInstructions(instructions) {
@@ -228,6 +291,8 @@ export class RealtimeClassroom {
       this.audio.srcObject = null;
     }
     this.dc = null;
+    this.responseStates.clear();
+    this.completedResponseIds.clear();
     this.pc = null;
     this.stream = null;
     this.audio = null;

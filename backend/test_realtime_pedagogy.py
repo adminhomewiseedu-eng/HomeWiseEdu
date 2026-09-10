@@ -180,3 +180,58 @@ def test_realtime_event_enforces_child_ownership_and_day_isolation():
         assert db.query(LessonSession).filter_by(child_id=child_a, lesson_id=1).count() == 2
     finally:
         db.close()
+
+
+def test_complete_realtime_lesson_progresses_deterministically_to_practice_ready():
+    child_id, headers = parent_and_child("complete-progression")
+    data = event(headers, child_id, "start_class").json()
+
+    expected = ["TEACHING", "WORKED_EXAMPLE_1", "WORKED_EXAMPLE_2", "WORKED_EXAMPLE_3", "UNDERSTANDING_CHECK"]
+    seen_tokens = set()
+    for next_phase in expected:
+        token = data["delivery_token"]
+        assert token and token not in seen_tokens
+        seen_tokens.add(token)
+        response = event(headers, child_id, "teacher_delivery_completed", delivery_token=token)
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["pedagogical_state"]["current_phase"] == next_phase
+
+        duplicate = event(headers, child_id, "teacher_delivery_completed", delivery_token=token)
+        assert duplicate.status_code == 409
+
+    state = data["pedagogical_state"]
+    assert state["worked_examples_completed"] == 3
+    assert state["worked_examples_delivered"] == {"1": True, "2": True, "3": True}
+    assert state["active_question"] == ""
+    assert state["practice_ready"] is False
+
+    question = event(headers, child_id, "assistant_response_completed", assistant_response="If we count one, two, three, four, what number comes next?")
+    assert question.status_code == 200, question.text
+    data = question.json()
+    assert data["pedagogical_state"]["active_question"] == "If we count one, two, three, four, what number comes next?"
+
+    with patch("backend.routers.lessons.evaluate_academic_response", new=AsyncMock(return_value={"result": "correct", "feedback": "Correct"})):
+        for phase, answer, next_phase, next_question in [
+            ("UNDERSTANDING_CHECK", "Five", "GUIDED_PRACTICE", "Count four counters and one more. How many are there?"),
+            ("GUIDED_PRACTICE", "Five", "APPLICATION", "You have three books and add two. How many books altogether?"),
+            ("APPLICATION", "Five", "MASTERY_CHECK", "What number comes immediately before five?"),
+            ("MASTERY_CHECK", "Four", "LESSON_SUMMARY", None),
+        ]:
+            assert data["pedagogical_state"]["current_phase"] == phase
+            response = event(headers, child_id, "academic_response", student_response=answer)
+            assert response.status_code == 200, response.text
+            data = response.json()
+            assert data["pedagogical_state"]["current_phase"] == next_phase
+            if next_question:
+                prompt = event(headers, child_id, "assistant_response_completed", assistant_response=next_question)
+                assert prompt.status_code == 200, prompt.text
+                data = prompt.json()
+
+    assert data["practice_ready"] is False
+    summary_token = data["delivery_token"]
+    completed = event(headers, child_id, "teacher_delivery_completed", delivery_token=summary_token)
+    assert completed.status_code == 200, completed.text
+    final = completed.json()
+    assert final["pedagogical_state"]["current_phase"] == "PRACTICE_READY"
+    assert final["practice_ready"] is True

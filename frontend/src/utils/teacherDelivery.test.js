@@ -57,3 +57,10 @@ test('accepts a complete worked example with a direct handoff question', () => {
     'Juliet, imagine five cubes in a row. I count each cube once: one, two, three, four, five. There are five cubes altogether. Juliet, what answer did I get in that example?',
   ), true);
 });
+
+test('accepts a complete teacher-led third example without absorbing the understanding check', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'WORKED_EXAMPLE_3',
+    'On the cards we have one, two, three, four, and five. After three comes four because four is the next card. That is the complete answer. Now we move to a separate understanding check.',
+  ), true);
+});

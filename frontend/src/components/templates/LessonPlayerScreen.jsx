@@ -7,6 +7,7 @@ import { getLevelLabel } from '../../utils/levels';
 import { resolveLessonResume } from '../../utils/lessonResume';
 import { adaptiveSilenceMs, isStableBargeCandidate, looksLikeTeacherEcho } from '../../utils/voiceTurn';
 import { teacherDeliveryLooksComplete } from '../../utils/teacherDelivery';
+import { nextAuthoritativeRealtimeTurn } from '../../utils/realtimeProgression';
 import BrandLogo from '../molecules/BrandLogo';
 
 export default function LessonPlayerScreen({
@@ -436,6 +437,12 @@ export default function LessonPlayerScreen({
     }
   }, []);
 
+  const continueFromAuthority = useCallback((previousPhase, data, realtime = realtimeRef.current) => {
+    const nextTurn = nextAuthoritativeRealtimeTurn(previousPhase, data?.pedagogical_state);
+    if (!nextTurn || !realtime?.connected) return false;
+    return realtime.createResponse(data.phase_instruction, nextTurn.tag);
+  }, []);
+
   const postRealtimeEvent = useCallback(async (event) => {
     const response = await lessonAPI.sendRealtimePedagogyEvent({
       child_id: child?.id || 1,
@@ -612,8 +619,16 @@ export default function LessonPlayerScreen({
               realtime.createResponse(data.phase_instruction, 'lesson_complete');
               return;
             }
+            continueFromAuthority(completedPhase, data, realtime);
           } catch (error) {
             console.warn('Realtime state persistence failed safely:', error);
+            try {
+              const recovered = await postRealtimeEvent({ event_type: 'start_class' });
+              applyRealtimeAuthority(recovered, realtime);
+              continueFromAuthority(null, recovered, realtime);
+            } catch (recoveryError) {
+              console.warn('Realtime authoritative reconciliation failed safely:', recoveryError);
+            }
           } finally {
             realtimeEventInFlightRef.current = false;
           }

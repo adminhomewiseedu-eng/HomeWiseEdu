@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from ..database import get_db
+from ..config import settings
 from ..models import Lesson, LessonDay, Child, StudentProgress, QuizQuestion, LessonSession, AIInteraction, User, Unit
 from ..schemas import AITutorChatRequest, AITutorChatResponse, QuizSubmission, QuizResultOut
 from ..services.openai_service import get_tutor_response, is_legacy_or_markdown_heavy, evaluate_academic_response
@@ -14,6 +16,7 @@ from .auth import get_current_user, authorize_child
 from ..utils.lesson_content import authored_worked_examples
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
+logger = logging.getLogger(__name__)
 
 TAB_NAMES = ["Objectives", "Learn", "Examples", "Words", "Remember"]
 
@@ -337,18 +340,18 @@ def _realtime_phase_directive(
         "WORKED_EXAMPLE_1": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_one}. "
             "Include the setup, reasoning, and answer. The teacher must do the example rather than asking the "
-            f"learner to invent it. You MUST end by asking: '{context.get('student_name', 'Student')}, what answer "
-            "did I get in that example?' Then stop and wait for the learner's answer."
+            "learner to supply any part of it. End with one complete transition sentence, then stop."
         ),
         "WORKED_EXAMPLE_2": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_two}. "
-            f"Include the setup, reasoning, and answer. You MUST end by asking: '{context.get('student_name', 'Student')}, "
-            "what answer did I get this time?' Then stop and wait for the learner's answer."
+            "Include the setup, reasoning, and answer without asking the learner to supply any part of it. End with "
+            "one complete transition sentence, then stop."
         ),
         "WORKED_EXAMPLE_3": (
             f"Briefly acknowledge the learner, then fully demonstrate this exact authored worked example: {example_three}. "
-            f"Include the setup, reasoning, and answer. You MUST end by asking: '{context.get('student_name', 'Student')}, "
-            "can you tell me the first step you would take in a similar example?' Then stop and wait for the learner's answer."
+            "Include the setup, reasoning, and answer. This remains a teacher-led demonstration: do not ask the "
+            "formal understanding-check question and do not use the learner's response as evidence. End with one "
+            "complete transition sentence, then stop. The app will separately authorize the understanding check."
         ),
         "UNDERSTANDING_CHECK": "Ask exactly one short understanding-check question and wait for the learner.",
         "GUIDED_PRACTICE": "Give one guided-practice task, ask one question, and wait for the learner.",
@@ -397,6 +400,8 @@ async def realtime_pedagogy_event(
         LessonSession.day_number == payload.day_number,
     ).first()
     state = dict(session.pedagogical_state or {}) if session else {}
+    previous_phase = state.get("current_phase")
+    previous_token_present = bool(state.get("pending_delivery_token"))
     response_phase = state.get("current_phase")
     context = _lesson_context(lesson, active_day, child)
     eval_result = None
@@ -479,6 +484,23 @@ async def realtime_pedagogy_event(
         session.messages = messages
         session.is_completed = bool(state.get("practice_ready"))
     db.commit()
+
+    if settings.ENVIRONMENT.lower() in {"development", "test", "local"}:
+        logger.info("realtime_pedagogy_transition %s", json.dumps({
+            "session_id": session.id,
+            "lesson_id": payload.lesson_id,
+            "day_number": payload.day_number,
+            "event_type": payload.event_type,
+            "previous_phase": previous_phase,
+            "new_phase": state.get("current_phase"),
+            "worked_examples_delivered": state.get("worked_examples_delivered"),
+            "delivery_token_created": bool(state.get("pending_delivery_token")) and (
+                not previous_token_present or payload.event_type == "teacher_delivery_completed"
+            ),
+            "delivery_token_completed": payload.event_type == "teacher_delivery_completed",
+            "active_question_set": bool(state.get("active_question")),
+            "practice_ready": bool(state.get("practice_ready")),
+        }, sort_keys=True))
 
     phase_instruction = _realtime_phase_directive(state, context, eval_result)
     if payload.event_type == "start_class" and state.get("current_phase") != "GREETING":
