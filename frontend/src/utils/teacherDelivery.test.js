@@ -64,3 +64,10 @@ test('accepts a complete teacher-led third example without absorbing the underst
     'On the cards we have one, two, three, four, and five. After three comes four because four is the next card. That is the complete answer. Now we move to a separate understanding check.',
   ), true);
 });
+
+test('accepts a fully delivered worked example that closes by moving to the next example', () => {
+  assert.equal(teacherDeliveryLooksComplete(
+    'WORKED_EXAMPLE_1',
+    "I point to each cube once while saying the numbers in order: one, two, three, four, five. Each cube gets one number. Then we'll move on to the next example.",
+  ), true);
+});

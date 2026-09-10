@@ -368,11 +368,11 @@ def _realtime_phase_directive(
             "in one inviting sentence, and ask if they are ready to begin. Do not start an example yet."
         ),
         "TEACHING": (
-            "Follow STRUCTURED_CURRICULUM.teaching_script as the primary source. Teach only its first coherent "
-            "step now; do not substitute a generic topic summary. Explain the idea and demonstrate it with concrete "
-            "content from the note. Adapt the language and scaffolding to the supplied learner level and objective, "
-            "without selecting a level-specific script. Do not ask the learner to find or provide materials. Do not "
-            "ask an abstract reflection or formal mastery question. Finish the complete explanation with a clear "
+            "Use STRUCTURED_CURRICULUM.teaching_script, the key concept, and objectives to introduce the concept "
+            "briefly. Explain its meaning or core rule at the supplied learner level, but do not perform a detailed "
+            "demonstration and do not use or preview any authored worked example. Reserve all detailed examples in "
+            "CURRICULUM_ANCHOR for WORKED_EXAMPLE_1 through WORKED_EXAMPLE_3. Do not ask the learner to find or "
+            "provide materials. Do not ask an abstract reflection or formal mastery question. Finish with a clear "
             "transition into the three teacher-led worked examples, then stop."
         ),
         "WORKED_EXAMPLE_1": (

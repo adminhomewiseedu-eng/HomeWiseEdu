@@ -27,8 +27,11 @@ export function teacherDeliveryLooksComplete(phase, transcript) {
   if (/\b(?:find|fetch|pick up|hold up|describe)\b[^.!?]{0,60}\bobjects?\b/i.test(text)) return false;
   if (phase === 'TEACHING'
     && /\b(?:let's|we will|we'll)\s+(?:try|practise|practice|continue|keep going)\b[^.!?]*\?$/i.test(text)) return false;
-  if (/^WORKED_EXAMPLE_[123]$/.test(phase)
-    && !/\b(answer|altogether|total|makes?|equals?|comes?|there (?:are|is)|we (?:have|get|counted))\b/i.test(text)) return false;
+  if (/^WORKED_EXAMPLE_[123]$/.test(phase)) {
+    const statesResult = /\b(answer|altogether|total|makes?|equals?|comes?|there (?:are|is)|we (?:have|get|counted))\b/i.test(text);
+    const closesDeliveredExample = /\b(?:move|moving|go|going) (?:on )?to (?:the )?(?:next|second|third) example\b/i.test(text);
+    if (!statesResult && !closesDeliveredExample) return false;
+  }
   if (QUESTION_PHASES.has(phase) && !text.includes('?')) return false;
   if (QUESTION_PHASES.has(phase) && phase !== 'GREETING') {
     const questionEnd = text.lastIndexOf('?');

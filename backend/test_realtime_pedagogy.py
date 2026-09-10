@@ -203,6 +203,9 @@ def test_complete_realtime_lesson_progresses_deterministically_to_practice_ready
         assert response.status_code == 200, response.text
         data = response.json()
         assert data["pedagogical_state"]["current_phase"] == next_phase
+        if next_phase == "TEACHING":
+            assert "do not perform a detailed demonstration" in data["phase_instruction"]
+            assert "Reserve all detailed examples" in data["phase_instruction"]
 
         duplicate = event(headers, child_id, "teacher_delivery_completed", delivery_token=token)
         assert duplicate.status_code == 409
