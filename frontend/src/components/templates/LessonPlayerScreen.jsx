@@ -10,8 +10,10 @@ import { teacherDeliveryLooksComplete } from '../../utils/teacherDelivery';
 import {
   nextAuthoritativeRealtimeTurn,
   shouldAcknowledgeTeacherDelivery,
+  isCurrentAuthoritativeResponse,
 } from '../../utils/realtimeProgression';
 import { deferRealtimeCompletion, drainRealtimeCompletion } from '../../utils/realtimeCompletionQueue';
+import { RealtimeRequestLedger } from '../../utils/realtimeRequestLedger';
 import BrandLogo from '../molecules/BrandLogo';
 
 export default function LessonPlayerScreen({
@@ -62,7 +64,7 @@ export default function LessonPlayerScreen({
   const realtimeEventInFlightRef = useRef(false);
   const pendingRealtimeTutorDoneRef = useRef(null);
   const realtimePhaseInstructionRef = useRef('');
-  const realtimeRequestedTurnRef = useRef(new Set());
+  const realtimeRequestedTurnRef = useRef(new RealtimeRequestLedger());
   const transcriptHandlerRef = useRef(null);
 
   const studentName = child?.name || 'Student';
@@ -447,10 +449,32 @@ export default function LessonPlayerScreen({
     const nextTurn = nextAuthoritativeRealtimeTurn(previousPhase, data?.pedagogical_state);
     if (!nextTurn || !realtime?.connected) return false;
     const requestKey = `${previousPhase || 'RECOVERY'}->${nextTurn.phase}:${nextTurn.tag}`;
-    if (realtimeRequestedTurnRef.current.has(requestKey)) return false;
-    realtimeRequestedTurnRef.current.add(requestKey);
-    const requested = realtime.createResponse(data.phase_instruction, nextTurn.tag);
-    if (!requested) realtimeRequestedTurnRef.current.delete(requestKey);
+    const metadata = realtimeRequestedTurnRef.current.reserve({
+      requestKey,
+      responseTag: nextTurn.tag,
+      authoritativePhase: nextTurn.phase,
+      deliveryToken: nextTurn.tag === 'teacher_delivery' ? (data.delivery_token || null) : null,
+    });
+    if (!metadata) return false;
+    const requested = realtime.createResponse(data.phase_instruction, nextTurn.tag, metadata);
+    if (!requested) realtimeRequestedTurnRef.current.release(requestKey);
+    return requested;
+  }, []);
+
+  const requestCurrentTeacherTurn = useCallback((instructions, previousPhase, realtime = realtimeRef.current) => {
+    const phase = realtimeStateRef.current?.current_phase || null;
+    const token = realtimeDeliveryTokenRef.current || null;
+    if (!phase || !token || !realtime?.connected) return false;
+    const requestKey = `${previousPhase || phase}->${phase}:teacher_delivery`;
+    const metadata = realtimeRequestedTurnRef.current.reserve({
+      requestKey,
+      responseTag: 'teacher_delivery',
+      authoritativePhase: phase,
+      deliveryToken: token,
+    });
+    if (!metadata) return false;
+    const requested = realtime.createResponse(instructions, 'teacher_delivery', metadata);
+    if (!requested) realtimeRequestedTurnRef.current.release(requestKey);
     return requested;
   }, []);
 
@@ -505,6 +529,20 @@ export default function LessonPlayerScreen({
         onTutorSpeaking: () => {
           if (isMountedRef.current) updateVoiceStatus('speaking');
         },
+        onResponseInterrupted: (metadata) => {
+          realtimeRequestedTurnRef.current.release(metadata?.requestKey);
+        },
+        onResponseFailed: (metadata) => {
+          realtimeRequestedTurnRef.current.release(metadata?.requestKey);
+          if (metadata?.deliveryToken === realtimeDeliveryTokenRef.current
+            && metadata?.authoritativePhase === realtimeStateRef.current?.current_phase) {
+            requestCurrentTeacherTurn(
+              realtimePhaseInstructionRef.current,
+              metadata.authoritativePhase,
+              realtime,
+            );
+          }
+        },
         onToolCall: async ({ name, callId, arguments: rawArguments }) => {
           if (name !== 'submit_academic_response') return;
           const authoritativePhase = realtimeStateRef.current?.current_phase;
@@ -557,19 +595,33 @@ export default function LessonPlayerScreen({
             );
           }
         },
-        onTutorDone: async ({ completed, transcript, hadAudio, responseTag }) => {
+        onTutorDone: async ({ completed, transcript, hadAudio, responseTag, responseMetadata }) => {
           if (!isMountedRef.current || isVoicePausedRef.current) return;
           updateVoiceStatus('listening');
           setMicActive(true);
-          if (!completed || !hadAudio) return;
+          const requestKey = responseMetadata?.requestKey || null;
+          if (!completed || !hadAudio) {
+            realtimeRequestedTurnRef.current.release(requestKey);
+            if (responseMetadata?.deliveryToken === realtimeDeliveryTokenRef.current
+              && responseMetadata?.authoritativePhase === realtimeStateRef.current?.current_phase) {
+              requestCurrentTeacherTurn(
+                realtimePhaseInstructionRef.current,
+                responseMetadata.authoritativePhase,
+                realtime,
+              );
+            }
+            return;
+          }
           if (realtimeEventInFlightRef.current) {
             deferRealtimeCompletion(
               pendingRealtimeTutorDoneRef,
-              { completed, transcript, hadAudio, responseTag },
+              { completed, transcript, hadAudio, responseTag, responseMetadata },
             );
             return;
           }
-          const completedPhase = realtimeStateRef.current?.current_phase || null;
+          const completedPhase = responseMetadata?.authoritativePhase
+            || realtimeStateRef.current?.current_phase
+            || null;
           if (transcript) {
             setLastSpokenText(transcript);
             setConversationMessages((messages) => [
@@ -591,18 +643,36 @@ export default function LessonPlayerScreen({
           try {
             const teacherDeliveryPhases = ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'];
             const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
-            const isAuthoritativeTeacherDelivery = teacherDeliveryPhases.includes(completedPhase)
-              && Boolean(realtimeDeliveryTokenRef.current);
+            const isAuthoritativeTeacherDelivery = responseTag === 'teacher_delivery'
+              && teacherDeliveryPhases.includes(completedPhase)
+              && Boolean(responseMetadata?.deliveryToken)
+              && Boolean(requestKey);
+            if (isAuthoritativeTeacherDelivery && !isCurrentAuthoritativeResponse(
+              responseMetadata,
+              realtimeStateRef.current,
+              realtimeDeliveryTokenRef.current,
+            )) {
+              realtimeRequestedTurnRef.current.release(requestKey);
+              requestCurrentTeacherTurn(
+                realtimePhaseInstructionRef.current,
+                realtimeStateRef.current?.current_phase,
+                realtime,
+              );
+              return;
+            }
             const transcriptComplete = teacherDeliveryLooksComplete(completedPhase, transcript);
-            if (isAuthoritativeTeacherDelivery && responseTag !== 'teacher_delivery') {
+            const authorityWaitingForTeacher = teacherDeliveryPhases.includes(realtimeStateRef.current?.current_phase)
+              && Boolean(realtimeDeliveryTokenRef.current);
+            if (!isAuthoritativeTeacherDelivery && authorityWaitingForTeacher) {
               // Automatic Realtime replies to an interruption, acknowledgement,
               // or help request are conversational. They must never consume the
               // server-issued delivery token. Resume the same teacher phase in
               // a separately tagged response after addressing the learner.
               lastRealtimeStudentTranscriptRef.current = '';
-              realtime.createResponse(
+              requestCurrentTeacherTurn(
                 `${realtimePhaseInstructionRef.current}\nThe learner has just spoken during this teacher-led phase. Respond directly to what they said, help or clarify if requested, then resume and fully deliver the current phase from the interrupted point. Do not count their acknowledgement as completion.`,
-                'teacher_delivery',
+                realtimeStateRef.current?.current_phase,
+                realtime,
               );
               return;
             }
@@ -612,9 +682,11 @@ export default function LessonPlayerScreen({
               hadAudio,
               transcriptComplete,
             )) {
-              realtime.createResponse(
+              realtimeRequestedTurnRef.current.release(requestKey);
+              requestCurrentTeacherTurn(
                 `${realtimePhaseInstructionRef.current}\nYour previous turn was only an acknowledgement or ended before the required phase content and direct question. Continue the same phase now. Do not repeat the acknowledgement and do not ask whether the learner is ready.`,
-                'teacher_delivery',
+                completedPhase,
+                realtime,
               );
               return;
             }
@@ -646,8 +718,8 @@ export default function LessonPlayerScreen({
               );
               return;
             }
-            const deliveryToken = responseTag === 'teacher_delivery'
-              ? realtimeDeliveryTokenRef.current
+            const deliveryToken = isAuthoritativeTeacherDelivery
+              ? responseMetadata.deliveryToken
               : null;
             const data = await postRealtimeEvent({
               event_type: deliveryToken ? 'teacher_delivery_completed' : 'assistant_response_completed',
@@ -656,6 +728,7 @@ export default function LessonPlayerScreen({
               student_response: deliveryToken ? null : (lastRealtimeStudentTranscriptRef.current || null),
             });
             applyRealtimeAuthority(data, realtime);
+            realtimeRequestedTurnRef.current.release(requestKey);
             lastRealtimeStudentTranscriptRef.current = '';
             if (data.practice_ready === true && data.pedagogical_state?.current_phase === 'PRACTICE_READY') {
               realtime.createResponse(data.phase_instruction, 'lesson_complete');
@@ -663,6 +736,7 @@ export default function LessonPlayerScreen({
             }
             continueFromAuthority(completedPhase, data, realtime);
           } catch (error) {
+            realtimeRequestedTurnRef.current.release(requestKey);
             console.warn('Realtime state persistence failed safely:', error);
             try {
               const recovered = await postRealtimeEvent({ event_type: 'start_class' });
@@ -693,7 +767,7 @@ export default function LessonPlayerScreen({
       realtimeRef.current = realtime;
       const startData = await postRealtimeEvent({ event_type: 'start_class' });
       applyRealtimeAuthority(startData, realtime);
-      realtime.createResponse(startData.phase_instruction, realtimeResponseTag(startData.pedagogical_state));
+      requestCurrentTeacherTurn(startData.phase_instruction, 'START', realtime);
       realtimeStarted = true;
       updateVoiceStatus('speaking');
       setMicActive(true);

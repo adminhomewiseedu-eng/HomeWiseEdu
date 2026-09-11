@@ -3,10 +3,25 @@ import assert from 'node:assert/strict';
 import {
   nextAuthoritativeRealtimeTurn,
   shouldAcknowledgeTeacherDelivery,
+  isCurrentAuthoritativeResponse,
 } from './realtimeProgression.js';
 
 test('waits for the learner after the opening greeting', () => {
   assert.equal(nextAuthoritativeRealtimeTurn('GREETING', { current_phase: 'TEACHING' }), null);
+});
+
+test('rejects stale response completion without consuming current authority', () => {
+  const state = { current_phase: 'WORKED_EXAMPLE_2' };
+  assert.equal(isCurrentAuthoritativeResponse({
+    requestKey: 'TEACHING->WE1',
+    authoritativePhase: 'WORKED_EXAMPLE_1',
+    deliveryToken: 'old-token',
+  }, state, 'current-token'), false);
+  assert.equal(isCurrentAuthoritativeResponse({
+    requestKey: 'WE1->WE2',
+    authoritativePhase: 'WORKED_EXAMPLE_2',
+    deliveryToken: 'current-token',
+  }, state, 'current-token'), true);
 });
 
 test('deterministically chains every worked-example boundary', () => {

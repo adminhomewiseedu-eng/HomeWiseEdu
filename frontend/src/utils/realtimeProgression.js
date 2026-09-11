@@ -36,3 +36,12 @@ export function nextAuthoritativeRealtimeTurn(previousPhase, state) {
 export function shouldAcknowledgeTeacherDelivery(responseTag, completed, hadAudio, transcriptLooksComplete) {
   return responseTag === 'teacher_delivery' && completed && hadAudio && transcriptLooksComplete;
 }
+
+export function isCurrentAuthoritativeResponse(metadata, state, deliveryToken) {
+  return Boolean(
+    metadata?.requestKey
+    && metadata?.deliveryToken
+    && metadata.authoritativePhase === state?.current_phase
+    && metadata.deliveryToken === deliveryToken
+  );
+}

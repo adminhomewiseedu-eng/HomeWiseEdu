@@ -10,10 +10,10 @@ export class RealtimeClassroom {
     this.pendingSpeech = null;
     this.responseTranscript = '';
     this.responseHasAudio = false;
-    this.nextResponseTag = null;
-    this.responseTag = null;
     this.responseStates = new Map();
     this.completedResponseIds = new Set();
+    this.pendingRequestEvents = new Map();
+    this.requestSequence = 0;
     this.marks = {};
     this.diagnosticsEnabled = Boolean(import.meta.env?.DEV);
   }
@@ -114,6 +114,12 @@ export class RealtimeClassroom {
         this.pendingSpeech = null;
       }
       this.handlers.onSpeechStarted?.();
+      for (const state of this.responseStates.values()) {
+        if (state.metadata?.requestKey && !state.settled) {
+          state.interrupted = true;
+          this.handlers.onResponseInterrupted?.(state.metadata);
+        }
+      }
       return;
     }
     if (event.type === 'input_audio_buffer.speech_stopped') {
@@ -130,12 +136,23 @@ export class RealtimeClassroom {
       const responseId = event.response?.id || null;
       this.responseTranscript = '';
       this.responseHasAudio = false;
-      this.responseTag = this.nextResponseTag;
-      this.nextResponseTag = null;
+      const wireMetadata = event.response?.metadata || {};
+      const metadata = (wireMetadata.hwe_request_key || wireMetadata.hwe_response_tag) ? Object.freeze({
+        requestKey: wireMetadata.hwe_request_key || null,
+        responseTag: wireMetadata.hwe_response_tag || null,
+        authoritativePhase: wireMetadata.hwe_authoritative_phase || null,
+        deliveryToken: wireMetadata.hwe_delivery_token || null,
+      }) : null;
       if (responseId) this.responseStates.set(responseId, {
-        transcript: '', hadAudio: false, responseTag: this.responseTag,
+        transcript: '', hadAudio: false, metadata,
         response: event.response, responseDone: false, audioStopped: false,
+        interrupted: false, settled: false,
       });
+      if (metadata?.requestKey) {
+        for (const [eventId, pending] of this.pendingRequestEvents.entries()) {
+          if (pending.requestKey === metadata.requestKey) this.pendingRequestEvents.delete(eventId);
+        }
+      }
       this.mark('response_created');
       this.handlers.onResponseCreated?.(event.response);
       return;
@@ -171,15 +188,30 @@ export class RealtimeClassroom {
     }
     if (event.type === 'output_audio_buffer.stopped') {
       this.mark('output_audio_buffer_stopped');
-      const state = this.responseStates.get(event.response_id);
+      let state = this.responseStates.get(event.response_id);
+      let responseId = event.response_id;
+      if (!state) {
+        const awaitingDrain = [...this.responseStates.entries()].filter(([, candidate]) => (
+          candidate.responseDone && candidate.hadAudio && !candidate.audioStopped
+        ));
+        if (awaitingDrain.length === 1) [responseId, state] = awaitingDrain[0];
+      }
       if (state) {
         state.audioStopped = true;
-        this.finalizeResponse(event.response_id);
+        this.finalizeResponse(responseId);
       }
       return;
     }
     if (event.type === 'output_audio_buffer.cleared') {
       this.mark('output_audio_buffer_cleared');
+      for (const [responseId, state] of this.responseStates.entries()) {
+        if (!state.settled && state.hadAudio && !state.audioStopped) {
+          state.interrupted = true;
+          state.audioStopped = true;
+          this.handlers.onResponseInterrupted?.(state.metadata);
+          this.finalizeResponse(responseId);
+        }
+      }
       return;
     }
     if (event.type === 'response.done') {
@@ -204,12 +236,17 @@ export class RealtimeClassroom {
       } else {
         this.emitTutorDone(responseId, event.response, {
           transcript: this.responseTranscript, hadAudio: this.responseHasAudio,
-          responseTag: this.responseTag, audioStopped: false,
+          metadata: null, audioStopped: false, interrupted: false, settled: false,
         });
       }
       return;
     }
     if (event.type === 'error') {
+      const failed = this.pendingRequestEvents.get(event.error?.event_id);
+      if (failed) {
+        this.pendingRequestEvents.delete(event.error.event_id);
+        this.handlers.onResponseFailed?.(failed);
+      }
       this.handlers.onError?.(event.error?.message || 'Realtime session error');
     }
   }
@@ -226,7 +263,8 @@ export class RealtimeClassroom {
   emitTutorDone(responseId, response, state) {
     if (responseId && this.completedResponseIds.has(responseId)) return;
     if (responseId) this.completedResponseIds.add(responseId);
-    const completed = response?.status === 'completed';
+    state.settled = true;
+    const completed = response?.status === 'completed' && !state.interrupted;
     if (this.pendingSpeech) {
       this.pendingSpeech.resolve(completed);
       this.pendingSpeech = null;
@@ -236,7 +274,8 @@ export class RealtimeClassroom {
       status: response?.status,
       transcript: String(state.transcript || '').trim(),
       hadAudio: Boolean(state.hadAudio),
-      responseTag: state.responseTag,
+      responseTag: state.metadata?.responseTag || null,
+      responseMetadata: state.metadata || null,
       responseId,
     });
   }
@@ -245,11 +284,31 @@ export class RealtimeClassroom {
     return this.send({ type: 'session.update', session: { type: 'realtime', instructions } });
   }
 
-  createResponse(instructions = null, responseTag = null) {
+  createResponse(instructions = null, responseTag = null, requestMetadata = null) {
+    if (requestMetadata?.requestKey) {
+      const authoritativeActive = [...this.responseStates.values()].some((state) => (
+        state.metadata?.deliveryToken && !state.settled
+      ));
+      const authoritativePending = [...this.pendingRequestEvents.values()].some((metadata) => metadata.deliveryToken);
+      if (authoritativeActive || authoritativePending) return false;
+    }
     const response = { output_modalities: ['audio'] };
     if (instructions) response.instructions = instructions;
-    this.nextResponseTag = responseTag;
-    return this.send({ type: 'response.create', response });
+    if (requestMetadata?.requestKey) {
+      response.metadata = {
+        hwe_request_key: requestMetadata.requestKey,
+        hwe_response_tag: requestMetadata.responseTag || responseTag || '',
+        hwe_authoritative_phase: requestMetadata.authoritativePhase || '',
+        hwe_delivery_token: requestMetadata.deliveryToken || '',
+      };
+    } else if (responseTag) {
+      response.metadata = { hwe_response_tag: responseTag };
+    }
+    const eventId = `hwe_response_${++this.requestSequence}`;
+    if (requestMetadata?.requestKey) this.pendingRequestEvents.set(eventId, requestMetadata);
+    const sent = this.send({ event_id: eventId, type: 'response.create', response });
+    if (!sent) this.pendingRequestEvents.delete(eventId);
+    return sent;
   }
 
   sendFunctionOutput(callId, output, instructions = null, responseTag = 'academic_feedback') {
@@ -276,6 +335,12 @@ export class RealtimeClassroom {
   cancelResponse() {
     const sent = this.send({ type: 'response.cancel' });
     if (sent) this.mark('interruption_cancellation');
+    for (const state of this.responseStates.values()) {
+      if (state.metadata?.requestKey && !state.settled) {
+        state.interrupted = true;
+        this.handlers.onResponseInterrupted?.(state.metadata);
+      }
+    }
     if (this.pendingSpeech) this.pendingSpeech.resolve(false);
     this.pendingSpeech = null;
   }
@@ -293,6 +358,10 @@ export class RealtimeClassroom {
     this.dc = null;
     this.responseStates.clear();
     this.completedResponseIds.clear();
+    for (const metadata of this.pendingRequestEvents.values()) {
+      this.handlers.onResponseFailed?.(metadata);
+    }
+    this.pendingRequestEvents.clear();
     this.pc = null;
     this.stream = null;
     this.audio = null;
