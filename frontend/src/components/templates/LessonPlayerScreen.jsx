@@ -11,6 +11,7 @@ import {
   nextAuthoritativeRealtimeTurn,
   shouldAcknowledgeTeacherDelivery,
   isCurrentAuthoritativeResponse,
+  parseRealtimeToolArguments,
 } from '../../utils/realtimeProgression';
 import { deferRealtimeCompletion, drainRealtimeCompletion } from '../../utils/realtimeCompletionQueue';
 import { RealtimeRequestLedger } from '../../utils/realtimeRequestLedger';
@@ -570,7 +571,10 @@ export default function LessonPlayerScreen({
             );
           }
         },
-        onToolCall: async ({ name, callId, arguments: rawArguments, responseMetadata }) => {
+        onToolCall: async ({
+          name, callId, arguments: rawArguments, responseMetadata,
+          responseStatus, interrupted, cancelled,
+        }) => {
           const originatingRequestKey = responseMetadata?.requestKey || null;
           if (originatingRequestKey) {
             realtimeRequestedTurnRef.current.release(originatingRequestKey);
@@ -580,6 +584,18 @@ export default function LessonPlayerScreen({
             });
           }
           if (name !== 'submit_academic_response') return;
+          const parsedCall = parseRealtimeToolArguments({
+            rawArguments, responseStatus, interrupted, cancelled,
+          });
+          if (!parsedCall.ok) {
+            if (parsedCall.reason === 'malformed_arguments') {
+              console.warn('Realtime academic tool arguments were incomplete; preserving the active question.');
+              realtime.sendFunctionOutput(callId, {
+                error: 'The answer was not captured completely. Do not evaluate or advance.',
+              }, 'Ask the learner to repeat their answer to the current question. Do not mark it incorrect or advance.');
+            }
+            return;
+          }
           const authoritativePhase = realtimeStateRef.current?.current_phase;
           const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];
           if (!academicPhases.includes(authoritativePhase)) {
@@ -603,7 +619,7 @@ export default function LessonPlayerScreen({
           }
           realtimeEventInFlightRef.current = true;
           try {
-            const args = JSON.parse(rawArguments || '{}');
+            const args = parsedCall.arguments;
             const studentResponse = String(args.student_response || lastRealtimeStudentTranscriptRef.current || '').trim();
             const data = await postRealtimeEvent({
               event_type: 'academic_response',

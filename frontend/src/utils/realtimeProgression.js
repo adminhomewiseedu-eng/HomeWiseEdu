@@ -45,3 +45,19 @@ export function isCurrentAuthoritativeResponse(metadata, state, deliveryToken) {
     && metadata.deliveryToken === deliveryToken
   );
 }
+
+export function parseRealtimeToolArguments({
+  rawArguments,
+  responseStatus,
+  interrupted = false,
+  cancelled = false,
+}) {
+  if (responseStatus !== 'completed' || interrupted || cancelled) {
+    return { ok: false, reason: 'incomplete_response', arguments: null };
+  }
+  try {
+    return { ok: true, reason: null, arguments: JSON.parse(rawArguments || '{}') };
+  } catch (_) {
+    return { ok: false, reason: 'malformed_arguments', arguments: null };
+  }
+}

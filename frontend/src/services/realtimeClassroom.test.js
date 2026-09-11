@@ -174,9 +174,11 @@ it('releases a function-call request and resumes one bound authoritative deliver
 it('keeps an interrupted authoritative function-call response recoverable without acknowledging it', () => {
   const calls = [];
   const completed = [];
+  const interrupted = [];
   const realtime = new RealtimeClassroom({
     onToolCall: (call) => calls.push(call),
     onTutorDone: (event) => completed.push(event),
+    onResponseInterrupted: (metadata) => interrupted.push(metadata?.requestKey),
   });
   realtime.handleEvent({ type: 'response.created', response: { id: 'interrupted-tool', metadata: {
     hwe_request_key: 'WE2->WE2', hwe_response_tag: 'teacher_delivery',
@@ -186,9 +188,30 @@ it('keeps an interrupted authoritative function-call response recoverable withou
   realtime.handleEvent({ type: 'response.done', response: { id: 'interrupted-tool', status: 'cancelled', output: [{
     type: 'function_call', name: 'submit_academic_response', call_id: 'call-interrupted', arguments: '{}',
   }] } });
-  assert.equal(calls[0].interrupted, true);
-  assert.equal(calls[0].responseMetadata.deliveryToken, 'token-we2');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(interrupted, ['WE2->WE2']);
   assert.deepEqual(completed, []);
+});
+
+it('deduplicates cancelled function-call completion and evaluates the next valid call once', () => {
+  const calls = [];
+  const realtime = new RealtimeClassroom({ onToolCall: (call) => calls.push(call) });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'cancelled-call' } });
+  const cancelled = { type: 'response.done', response: { id: 'cancelled-call', status: 'cancelled', output: [{
+    type: 'function_call', name: 'submit_academic_response', call_id: 'partial', arguments: '{"student_response":"fi',
+  }] } };
+  realtime.handleEvent(cancelled);
+  realtime.handleEvent(cancelled);
+  assert.equal(calls.length, 0);
+
+  realtime.handleEvent({ type: 'response.created', response: { id: 'valid-call' } });
+  const valid = { type: 'response.done', response: { id: 'valid-call', status: 'completed', output: [{
+    type: 'function_call', name: 'submit_academic_response', call_id: 'valid', arguments: '{"student_response":"five"}',
+  }] } };
+  realtime.handleEvent(valid);
+  realtime.handleEvent(valid);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].callId, 'valid');
 });
 
 it('returns tool output to the same realtime conversation and starts tagged audio', () => {

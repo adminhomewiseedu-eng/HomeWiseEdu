@@ -4,7 +4,27 @@ import {
   nextAuthoritativeRealtimeTurn,
   shouldAcknowledgeTeacherDelivery,
   isCurrentAuthoritativeResponse,
+  parseRealtimeToolArguments,
 } from './realtimeProgression.js';
+
+test('discards interrupted or cancelled tool arguments before parsing', () => {
+  const incomplete = '{"student_response":"five';
+  assert.deepEqual(parseRealtimeToolArguments({
+    rawArguments: incomplete, responseStatus: 'cancelled', interrupted: true,
+  }), { ok: false, reason: 'incomplete_response', arguments: null });
+});
+
+test('rejects malformed completed tool arguments without academic evidence', () => {
+  assert.deepEqual(parseRealtimeToolArguments({
+    rawArguments: '{"student_response":', responseStatus: 'completed',
+  }), { ok: false, reason: 'malformed_arguments', arguments: null });
+});
+
+test('parses the next valid completed student response normally', () => {
+  assert.deepEqual(parseRealtimeToolArguments({
+    rawArguments: '{"student_response":"five"}', responseStatus: 'completed',
+  }), { ok: true, reason: null, arguments: { student_response: 'five' } });
+});
 
 test('waits for the learner after the opening greeting', () => {
   assert.equal(nextAuthoritativeRealtimeTurn('GREETING', { current_phase: 'TEACHING' }), null);
