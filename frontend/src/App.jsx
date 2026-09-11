@@ -19,6 +19,7 @@ import ParentSettingsScreen from './components/templates/ParentSettingsScreen';
 import ParentProfileScreen from './components/templates/ParentProfileScreen';
 import { useAuth } from './hooks/useAuth';
 import { authAPI, parentAPI } from './services/api';
+import { preserveRealtimeTrace } from './utils/diagnosticRouting';
 
 export default function App() {
   const navigate = useNavigate();
@@ -55,7 +56,11 @@ export default function App() {
     setActiveActivityType(typeof lessonRef === 'object' ? (lessonRef?.activity_type || 'Explore') : 'Explore');
   };
 
-  const go = (path) => { navigate(path.startsWith('/') ? path : `/${path}`); window.scrollTo(0, 0); };
+  const go = (path) => {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    navigate(preserveRealtimeTrace(normalizedPath, location.search));
+    window.scrollTo(0, 0);
+  };
 
   const handleLogin = async (email, pw) => {
     const user = await login(email, pw);
