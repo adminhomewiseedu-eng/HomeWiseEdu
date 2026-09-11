@@ -16,6 +16,13 @@ import { deferRealtimeCompletion, drainRealtimeCompletion } from '../../utils/re
 import { RealtimeRequestLedger } from '../../utils/realtimeRequestLedger';
 import BrandLogo from '../molecules/BrandLogo';
 
+const realtimeTraceEnabled = () => {
+  try { return new URLSearchParams(window.location.search).get('realtimeTrace') === '1'; } catch (_) { return false; }
+};
+const traceRealtimeAuthority = (event, details = {}) => {
+  if (realtimeTraceEnabled()) console.info('[HWE Authority]', { event, ...details });
+};
+
 export default function LessonPlayerScreen({
   lessonId = 1,
   dayNumber = 1,
@@ -438,6 +445,13 @@ export default function LessonPlayerScreen({
     realtimeDeliveryTokenRef.current = data.delivery_token || null;
     realtimePhaseInstructionRef.current = data.phase_instruction || '';
     setPracticeReady(data.practice_ready === true);
+    traceRealtimeAuthority('backend.state', {
+      phase: state.current_phase || null,
+      workedExamplesDelivered: state.worked_examples_delivered || null,
+      awaitingStudent: Boolean(state.active_question && state.active_phase === state.current_phase),
+      teacherLed: ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY'].includes(state.current_phase),
+      hasDeliveryToken: Boolean(data.delivery_token),
+    });
     if (realtime?.connected) {
       realtime.updateInstructions(
         `${realtimeBaseInstructionsRef.current}\nCURRENT_AUTHORITATIVE_STATE=${JSON.stringify(state)}\n${data.phase_instruction || ''}`
@@ -455,9 +469,16 @@ export default function LessonPlayerScreen({
       authoritativePhase: nextTurn.phase,
       deliveryToken: nextTurn.tag === 'teacher_delivery' ? (data.delivery_token || null) : null,
     });
-    if (!metadata) return false;
+    if (!metadata) {
+      traceRealtimeAuthority('request_key.blocked', { requestKey, phase: nextTurn.phase });
+      return false;
+    }
+    traceRealtimeAuthority('request_key.acquired', { requestKey, phase: nextTurn.phase, hasDeliveryToken: Boolean(metadata.deliveryToken) });
     const requested = realtime.createResponse(data.phase_instruction, nextTurn.tag, metadata);
-    if (!requested) realtimeRequestedTurnRef.current.release(requestKey);
+    if (!requested) {
+      realtimeRequestedTurnRef.current.release(requestKey);
+      traceRealtimeAuthority('request_key.released', { requestKey, reason: 'create_failed' });
+    }
     return requested;
   }, []);
 
@@ -473,8 +494,12 @@ export default function LessonPlayerScreen({
       deliveryToken: token,
     });
     if (!metadata) return false;
+    traceRealtimeAuthority('request_key.acquired', { requestKey, phase, hasDeliveryToken: true });
     const requested = realtime.createResponse(instructions, 'teacher_delivery', metadata);
-    if (!requested) realtimeRequestedTurnRef.current.release(requestKey);
+    if (!requested) {
+      realtimeRequestedTurnRef.current.release(requestKey);
+      traceRealtimeAuthority('request_key.released', { requestKey, reason: 'create_failed' });
+    }
     return requested;
   }, []);
 
@@ -531,9 +556,11 @@ export default function LessonPlayerScreen({
         },
         onResponseInterrupted: (metadata) => {
           realtimeRequestedTurnRef.current.release(metadata?.requestKey);
+          traceRealtimeAuthority('request_key.released', { requestKey: metadata?.requestKey || null, reason: 'interrupted' });
         },
         onResponseFailed: (metadata) => {
           realtimeRequestedTurnRef.current.release(metadata?.requestKey);
+          traceRealtimeAuthority('request_key.released', { requestKey: metadata?.requestKey || null, reason: 'response_failed' });
           if (metadata?.deliveryToken === realtimeDeliveryTokenRef.current
             && metadata?.authoritativePhase === realtimeStateRef.current?.current_phase) {
             requestCurrentTeacherTurn(
@@ -602,6 +629,7 @@ export default function LessonPlayerScreen({
           const requestKey = responseMetadata?.requestKey || null;
           if (!completed || !hadAudio) {
             realtimeRequestedTurnRef.current.release(requestKey);
+            traceRealtimeAuthority('request_key.released', { requestKey, reason: completed ? 'no_audio' : 'not_completed' });
             if (responseMetadata?.deliveryToken === realtimeDeliveryTokenRef.current
               && responseMetadata?.authoritativePhase === realtimeStateRef.current?.current_phase) {
               requestCurrentTeacherTurn(
@@ -721,6 +749,12 @@ export default function LessonPlayerScreen({
             const deliveryToken = isAuthoritativeTeacherDelivery
               ? responseMetadata.deliveryToken
               : null;
+            traceRealtimeAuthority('backend.submit', {
+              eventType: deliveryToken ? 'teacher_delivery_completed' : 'assistant_response_completed',
+              requestKey,
+              phase: completedPhase,
+              hasDeliveryToken: Boolean(deliveryToken),
+            });
             const data = await postRealtimeEvent({
               event_type: deliveryToken ? 'teacher_delivery_completed' : 'assistant_response_completed',
               delivery_token: deliveryToken,
@@ -729,12 +763,18 @@ export default function LessonPlayerScreen({
             });
             applyRealtimeAuthority(data, realtime);
             realtimeRequestedTurnRef.current.release(requestKey);
+            traceRealtimeAuthority('request_key.released', { requestKey, reason: 'backend_acknowledged' });
             lastRealtimeStudentTranscriptRef.current = '';
             if (data.practice_ready === true && data.pedagogical_state?.current_phase === 'PRACTICE_READY') {
               realtime.createResponse(data.phase_instruction, 'lesson_complete');
               return;
             }
-            continueFromAuthority(completedPhase, data, realtime);
+            const continued = continueFromAuthority(completedPhase, data, realtime);
+            traceRealtimeAuthority('continuation.decision', {
+              previousPhase: completedPhase,
+              nextPhase: data.pedagogical_state?.current_phase || null,
+              responseCreateIssued: continued,
+            });
           } catch (error) {
             realtimeRequestedTurnRef.current.release(requestKey);
             console.warn('Realtime state persistence failed safely:', error);

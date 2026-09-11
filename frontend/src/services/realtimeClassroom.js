@@ -1,4 +1,5 @@
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const shortId = (value) => value ? `${String(value).slice(0, 8)}…` : null;
 
 export class RealtimeClassroom {
   constructor(handlers = {}) {
@@ -16,6 +17,17 @@ export class RealtimeClassroom {
     this.requestSequence = 0;
     this.marks = {};
     this.diagnosticsEnabled = Boolean(import.meta.env?.DEV);
+    try {
+      this.diagnosticsEnabled = this.diagnosticsEnabled
+        || new URLSearchParams(window.location.search).get('realtimeTrace') === '1';
+    } catch (_) {
+      // Tests and non-browser rendering have no window.
+    }
+  }
+
+  trace(event, details = {}) {
+    if (!this.diagnosticsEnabled) return;
+    console.info('[HWE Realtime]', { event, ...details });
   }
 
   get connected() {
@@ -107,6 +119,7 @@ export class RealtimeClassroom {
 
   handleEvent(event) {
     if (event.type === 'input_audio_buffer.speech_started') {
+      this.trace('speech_started');
       this.mark('speech_started');
       this.mark('interruption_or_speech_start');
       if (this.pendingSpeech) {
@@ -123,6 +136,7 @@ export class RealtimeClassroom {
       return;
     }
     if (event.type === 'input_audio_buffer.speech_stopped') {
+      this.trace('speech_stopped');
       this.mark('speech_stopped');
       this.handlers.onSpeechStopped?.();
       return;
@@ -147,6 +161,14 @@ export class RealtimeClassroom {
         transcript: '', hadAudio: false, metadata,
         response: event.response, responseDone: false, audioStopped: false,
         interrupted: false, settled: false,
+      });
+      this.trace('response.created', {
+        responseId: shortId(responseId),
+        requestKey: metadata?.requestKey || null,
+        tag: metadata?.responseTag || null,
+        phase: metadata?.authoritativePhase || null,
+        hasDeliveryToken: Boolean(metadata?.deliveryToken),
+        origin: metadata?.requestKey ? 'authoritative' : 'vad',
       });
       if (metadata?.requestKey) {
         for (const [eventId, pending] of this.pendingRequestEvents.entries()) {
@@ -180,6 +202,10 @@ export class RealtimeClassroom {
       const state = this.responseStates.get(event.response_id);
       if (state) state.hadAudio = true;
       this.handlers.onTutorSpeaking?.();
+      if (!state?.audioStartedLogged) {
+        if (state) state.audioStartedLogged = true;
+        this.trace('output_audio_buffer.started', { responseId: shortId(event.response_id) });
+      }
       return;
     }
     if (event.type === 'response.output_audio.done' || event.type === 'response.audio.done') {
@@ -187,6 +213,7 @@ export class RealtimeClassroom {
       return;
     }
     if (event.type === 'output_audio_buffer.stopped') {
+      this.trace('output_audio_buffer.stopped', { responseId: shortId(event.response_id) });
       this.mark('output_audio_buffer_stopped');
       let state = this.responseStates.get(event.response_id);
       let responseId = event.response_id;
@@ -217,6 +244,10 @@ export class RealtimeClassroom {
     if (event.type === 'response.done') {
       this.mark(event.response?.status === 'cancelled' ? 'response_cancelled' : 'response_completed');
       const responseId = event.response?.id || null;
+      this.trace('response.done', {
+        responseId: shortId(responseId),
+        status: event.response?.status || null,
+      });
       if (responseId && this.completedResponseIds.has(responseId)) return;
       const functionCalls = (event.response?.output || []).filter((item) => item.type === 'function_call');
       if (functionCalls.length) {
@@ -290,7 +321,14 @@ export class RealtimeClassroom {
         state.metadata?.deliveryToken && !state.settled
       ));
       const authoritativePending = [...this.pendingRequestEvents.values()].some((metadata) => metadata.deliveryToken);
-      if (authoritativeActive || authoritativePending) return false;
+      if (authoritativeActive || authoritativePending) {
+        this.trace('response.create.blocked', {
+          requestKey: requestMetadata.requestKey,
+          authoritativeActive,
+          authoritativePending,
+        });
+        return false;
+      }
     }
     const response = { output_modalities: ['audio'] };
     if (instructions) response.instructions = instructions;
@@ -307,6 +345,15 @@ export class RealtimeClassroom {
     const eventId = `hwe_response_${++this.requestSequence}`;
     if (requestMetadata?.requestKey) this.pendingRequestEvents.set(eventId, requestMetadata);
     const sent = this.send({ event_id: eventId, type: 'response.create', response });
+    this.trace('response.create', {
+      eventId: shortId(eventId),
+      requestKey: requestMetadata?.requestKey || null,
+      tag: requestMetadata?.responseTag || responseTag || null,
+      phase: requestMetadata?.authoritativePhase || null,
+      hasDeliveryToken: Boolean(requestMetadata?.deliveryToken),
+      origin: requestMetadata?.requestKey ? 'authoritative' : 'conversation',
+      sent,
+    });
     if (!sent) this.pendingRequestEvents.delete(eventId);
     return sent;
   }

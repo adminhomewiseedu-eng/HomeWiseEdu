@@ -202,3 +202,43 @@ it('reports failed explicit response requests so their keys can be reused', () =
   realtime.handleEvent({ type: 'error', error: { event_id: wire.event_id, message: 'response failed' } });
   assert.deepEqual(failed, ['WE3->CHECK']);
 });
+
+it('cannot strand WE2 when child speech produces a VAD acknowledgement after WE1', () => {
+  const sent = [];
+  const completed = [];
+  const interrupted = [];
+  const realtime = new RealtimeClassroom({
+    onTutorDone: (event) => completed.push(event),
+    onResponseInterrupted: (metadata) => interrupted.push(metadata?.requestKey),
+  });
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => sent.push(JSON.parse(payload)) };
+
+  const we1 = {
+    requestKey: 'TEACHING->WORKED_EXAMPLE_1:teacher_delivery',
+    responseTag: 'teacher_delivery', authoritativePhase: 'WORKED_EXAMPLE_1', deliveryToken: 'token-we1',
+  };
+  realtime.createResponse('Deliver WE1.', 'teacher_delivery', we1);
+  realtime.handleEvent({ type: 'response.created', response: { id: 'we1', metadata: sent[0].response.metadata } });
+  realtime.handleEvent({ type: 'response.output_audio.delta', response_id: 'we1', delta: 'audio' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'we1', status: 'completed', output: [] } });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'we1' });
+
+  realtime.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  realtime.handleEvent({ type: 'input_audio_buffer.speech_stopped' });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'vad-ack', metadata: null } });
+  realtime.handleEvent({ type: 'response.output_audio.delta', response_id: 'vad-ack', delta: 'audio' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'vad-ack', status: 'completed', output: [] } });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'vad-ack' });
+
+  const we2 = {
+    requestKey: 'WORKED_EXAMPLE_1->WORKED_EXAMPLE_2:teacher_delivery',
+    responseTag: 'teacher_delivery', authoritativePhase: 'WORKED_EXAMPLE_2', deliveryToken: 'token-we2',
+  };
+  assert.equal(realtime.createResponse('Deliver WE2.', 'teacher_delivery', we2), true);
+  const we2Request = sent.at(-1);
+  assert.equal(we2Request.response.metadata.hwe_authoritative_phase, 'WORKED_EXAMPLE_2');
+  assert.equal(completed[0].responseMetadata.deliveryToken, 'token-we1');
+  assert.equal(completed[1].responseMetadata, null);
+  assert.deepEqual(interrupted, []);
+});
