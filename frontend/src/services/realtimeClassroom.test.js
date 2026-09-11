@@ -332,3 +332,15 @@ it('ignores stale playback completion and cannot acknowledge a newer delivery', 
   realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'new-response' });
   assert.equal(completed[0].responseMetadata.deliveryToken, 'token-we2');
 });
+
+it('refuses to create an unbound teacher delivery response', () => {
+  const sent = [];
+  const realtime = new RealtimeClassroom();
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => sent.push(JSON.parse(payload)) };
+  assert.equal(realtime.createResponse('Retry WE2.', 'teacher_delivery'), false);
+  assert.equal(realtime.createResponse('Retry WE2.', 'teacher_delivery', {
+    requestKey: 'WE2->WE2', responseTag: 'teacher_delivery', authoritativePhase: 'WORKED_EXAMPLE_2',
+  }), false);
+  assert.deepEqual(sent, []);
+});

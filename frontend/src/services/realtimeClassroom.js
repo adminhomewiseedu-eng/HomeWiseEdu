@@ -346,6 +346,19 @@ export class RealtimeClassroom {
   }
 
   createResponse(instructions = null, responseTag = null, requestMetadata = null) {
+    if (responseTag === 'teacher_delivery'
+      && (!requestMetadata?.requestKey
+        || !requestMetadata?.authoritativePhase
+        || !requestMetadata?.deliveryToken
+        || requestMetadata?.responseTag !== 'teacher_delivery')) {
+      this.trace('response.create.blocked', {
+        requestKey: requestMetadata?.requestKey || null,
+        tag: responseTag,
+        phase: requestMetadata?.authoritativePhase || null,
+        reason: 'missing_authority_metadata',
+      });
+      return false;
+    }
     if (requestMetadata?.requestKey) {
       const authoritativeActive = this.hasActiveResponse();
       const authoritativePending = [...this.pendingRequestEvents.values()].some((pending) => pending.metadata?.deliveryToken);

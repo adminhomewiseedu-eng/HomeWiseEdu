@@ -513,10 +513,10 @@ export default function LessonPlayerScreen({
     return response.data;
   }, [child, lessonId, dayNumber]);
 
-  const realtimeResponseTag = (state, fallback = 'academic_prompt') => (
-    ['GREETING', 'TEACHING', 'WORKED_EXAMPLE_1', 'WORKED_EXAMPLE_2', 'WORKED_EXAMPLE_3', 'LESSON_SUMMARY']
-      .includes(state?.current_phase) ? 'teacher_delivery' : fallback
-  );
+  // Tool and VAD continuations are conversational. Only
+  // requestCurrentTeacherTurn/continueFromAuthority may create a delivery-tagged
+  // response because those paths bind the backend phase token and request key.
+  const realtimeResponseTag = (_state, fallback = 'academic_prompt') => fallback;
 
   const handleStartClass = async () => {
     if (!lesson || hasStartedVoice) return;

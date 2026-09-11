@@ -2,25 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { teacherDeliveryLooksComplete } from './teacherDelivery.js';
 
-test('rejects praise-only speech as completion of a worked example', () => {
+test('accepts non-empty authoritative worked-example output without judging its wording', () => {
   assert.equal(
     teacherDeliveryLooksComplete('WORKED_EXAMPLE_3', "Brilliant counting, Juliet. You're doing so well."),
-    false,
+    true,
   );
 });
 
-test('rejects a vague readiness loop as completion of teaching', () => {
+test('accepts non-empty authoritative teaching output without arbitrary wording heuristics', () => {
   assert.equal(
     teacherDeliveryLooksComplete('TEACHING', "It's all right, Juliet. Let's get started. Are you ready to jump in?"),
-    false,
+    true,
   );
 });
 
-test('rejects a long teaching turn that ends with only a vague invitation', () => {
+test('does not use a teaching transcript ending as phase authority', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'TEACHING',
     "We counted the five cubes slowly and carefully. We touched each imagined cube once, saying one, two, three, four, and five in the correct order. Now let's practise a few more times together?",
-  ), false);
+  ), true);
 });
 
 test('accepts a complete teacher-led Level 0 explanation without an abstract question', () => {
@@ -30,11 +30,23 @@ test('accepts a complete teacher-led Level 0 explanation without an abstract que
   ), true);
 });
 
-test('rejects teaching that sends the learner to find physical objects', () => {
+test('does not make worked-example progression depend on selected English phrases', () => {
   assert.equal(teacherDeliveryLooksComplete(
     'WORKED_EXAMPLE_2',
     'We have practised counting carefully from one to five and touched each item only once as we counted. Juliet, can you find five objects around you and count them out loud for me?',
-  ), false);
+  ), true);
+});
+
+test('accepts a valid short WE2 response with natural alternative wording', () => {
+  assert.equal(
+    teacherDeliveryLooksComplete('WORKED_EXAMPLE_2', 'Five fingers, counted carefully from one through five.'),
+    true,
+  );
+});
+
+test('rejects empty or punctuation-only teacher output', () => {
+  assert.equal(teacherDeliveryLooksComplete('WORKED_EXAMPLE_2', ''), false);
+  assert.equal(teacherDeliveryLooksComplete('WORKED_EXAMPLE_2', '...'), false);
 });
 
 test('rejects a transition-only response in an assessed phase', () => {
