@@ -14,6 +14,7 @@ export class RealtimeClassroom {
     this.responseStates = new Map();
     this.completedResponseIds = new Set();
     this.pendingRequestEvents = new Map();
+    this.pendingAuthoritativeResponse = null;
     this.requestSequence = 0;
     this.marks = {};
     this.diagnosticsEnabled = Boolean(import.meta.env?.DEV);
@@ -159,7 +160,7 @@ export class RealtimeClassroom {
       }) : null;
       if (responseId) this.responseStates.set(responseId, {
         transcript: '', hadAudio: false, metadata,
-        response: event.response, responseDone: false, audioStopped: false,
+        response: event.response, responseDone: false, audioProduced: false, audioStopped: false,
         interrupted: false, settled: false,
       });
       this.trace('response.created', {
@@ -172,7 +173,7 @@ export class RealtimeClassroom {
       });
       if (metadata?.requestKey) {
         for (const [eventId, pending] of this.pendingRequestEvents.entries()) {
-          if (pending.requestKey === metadata.requestKey) this.pendingRequestEvents.delete(eventId);
+          if (pending.metadata?.requestKey === metadata.requestKey) this.pendingRequestEvents.delete(eventId);
         }
       }
       this.mark('response_created');
@@ -200,7 +201,10 @@ export class RealtimeClassroom {
       }
       this.responseHasAudio = true;
       const state = this.responseStates.get(event.response_id);
-      if (state) state.hadAudio = true;
+      if (state) {
+        state.hadAudio = true;
+        state.audioProduced = true;
+      }
       this.handlers.onTutorSpeaking?.();
       if (!state?.audioStartedLogged) {
         if (state) state.audioStartedLogged = true;
@@ -209,6 +213,8 @@ export class RealtimeClassroom {
       return;
     }
     if (event.type === 'response.output_audio.done' || event.type === 'response.audio.done') {
+      const state = this.responseStates.get(event.response_id);
+      if (state) state.audioProduced = true;
       this.mark('response_audio_done');
       return;
     }
@@ -217,14 +223,15 @@ export class RealtimeClassroom {
       this.mark('output_audio_buffer_stopped');
       let state = this.responseStates.get(event.response_id);
       let responseId = event.response_id;
-      if (!state) {
+      if (!state && !event.response_id) {
         const awaitingDrain = [...this.responseStates.entries()].filter(([, candidate]) => (
-          candidate.responseDone && candidate.hadAudio && !candidate.audioStopped
+          candidate.responseDone && candidate.audioProduced && !candidate.audioStopped
         ));
         if (awaitingDrain.length === 1) [responseId, state] = awaitingDrain[0];
       }
       if (state) {
         state.audioStopped = true;
+        state.hadAudio = state.hadAudio || state.audioProduced;
         this.finalizeResponse(responseId);
       }
       return;
@@ -232,7 +239,7 @@ export class RealtimeClassroom {
     if (event.type === 'output_audio_buffer.cleared') {
       this.mark('output_audio_buffer_cleared');
       for (const [responseId, state] of this.responseStates.entries()) {
-        if (!state.settled && state.hadAudio && !state.audioStopped) {
+        if (!state.settled && (state.hadAudio || state.audioProduced) && !state.audioStopped) {
           state.interrupted = true;
           state.audioStopped = true;
           this.handlers.onResponseInterrupted?.(state.metadata);
@@ -252,11 +259,13 @@ export class RealtimeClassroom {
       const functionCalls = (event.response?.output || []).filter((item) => item.type === 'function_call');
       if (functionCalls.length) {
         if (responseId) this.completedResponseIds.add(responseId);
+        if (responseId) this.responseStates.delete(responseId);
         functionCalls.forEach((call) => this.handlers.onToolCall?.({
           name: call.name,
           callId: call.call_id,
           arguments: call.arguments || '{}',
         }));
+        this.flushPendingAuthoritativeResponse();
         return;
       }
       const state = responseId ? this.responseStates.get(responseId) : null;
@@ -276,7 +285,16 @@ export class RealtimeClassroom {
       const failed = this.pendingRequestEvents.get(event.error?.event_id);
       if (failed) {
         this.pendingRequestEvents.delete(event.error.event_id);
-        this.handlers.onResponseFailed?.(failed);
+        const activeResponseConflict = /active response in progress/i.test(event.error?.message || '');
+        if (activeResponseConflict && this.hasActiveResponse()) {
+          this.pendingAuthoritativeResponse = failed;
+          this.trace('response.create.deferred', {
+            requestKey: failed.metadata?.requestKey || null,
+            reason: 'active_response',
+          });
+        } else {
+          this.handlers.onResponseFailed?.(failed.metadata);
+        }
       }
       this.handlers.onError?.(event.error?.message || 'Realtime session error');
     }
@@ -286,9 +304,21 @@ export class RealtimeClassroom {
     const state = this.responseStates.get(responseId);
     if (!state?.responseDone) return;
     const completed = state.response?.status === 'completed';
-    if (completed && state.hadAudio && !state.audioStopped) return;
+    if (completed && state.audioProduced && !state.audioStopped) return;
     this.emitTutorDone(responseId, state.response, state);
     this.responseStates.delete(responseId);
+    this.flushPendingAuthoritativeResponse();
+  }
+
+  hasActiveResponse() {
+    return [...this.responseStates.values()].some((state) => !state.settled);
+  }
+
+  flushPendingAuthoritativeResponse() {
+    if (!this.pendingAuthoritativeResponse || this.hasActiveResponse() || !this.connected) return false;
+    const pending = this.pendingAuthoritativeResponse;
+    this.pendingAuthoritativeResponse = null;
+    return this.sendResponseCreate(pending.instructions, pending.responseTag, pending.metadata);
   }
 
   emitTutorDone(responseId, response, state) {
@@ -317,19 +347,25 @@ export class RealtimeClassroom {
 
   createResponse(instructions = null, responseTag = null, requestMetadata = null) {
     if (requestMetadata?.requestKey) {
-      const authoritativeActive = [...this.responseStates.values()].some((state) => (
-        state.metadata?.deliveryToken && !state.settled
-      ));
-      const authoritativePending = [...this.pendingRequestEvents.values()].some((metadata) => metadata.deliveryToken);
+      const authoritativeActive = this.hasActiveResponse();
+      const authoritativePending = [...this.pendingRequestEvents.values()].some((pending) => pending.metadata?.deliveryToken);
       if (authoritativeActive || authoritativePending) {
         this.trace('response.create.blocked', {
           requestKey: requestMetadata.requestKey,
           authoritativeActive,
           authoritativePending,
         });
+        if (authoritativeActive && !authoritativePending && !this.pendingAuthoritativeResponse) {
+          this.pendingAuthoritativeResponse = { instructions, responseTag, metadata: requestMetadata };
+          return true;
+        }
         return false;
       }
     }
+    return this.sendResponseCreate(instructions, responseTag, requestMetadata);
+  }
+
+  sendResponseCreate(instructions = null, responseTag = null, requestMetadata = null) {
     const response = { output_modalities: ['audio'] };
     if (instructions) response.instructions = instructions;
     if (requestMetadata?.requestKey) {
@@ -343,7 +379,9 @@ export class RealtimeClassroom {
       response.metadata = { hwe_response_tag: responseTag };
     }
     const eventId = `hwe_response_${++this.requestSequence}`;
-    if (requestMetadata?.requestKey) this.pendingRequestEvents.set(eventId, requestMetadata);
+    if (requestMetadata?.requestKey) this.pendingRequestEvents.set(eventId, {
+      instructions, responseTag, metadata: requestMetadata,
+    });
     const sent = this.send({ event_id: eventId, type: 'response.create', response });
     this.trace('response.create', {
       eventId: shortId(eventId),
@@ -406,9 +444,13 @@ export class RealtimeClassroom {
     this.responseStates.clear();
     this.completedResponseIds.clear();
     for (const metadata of this.pendingRequestEvents.values()) {
-      this.handlers.onResponseFailed?.(metadata);
+      this.handlers.onResponseFailed?.(metadata.metadata);
     }
     this.pendingRequestEvents.clear();
+    if (this.pendingAuthoritativeResponse) {
+      this.handlers.onResponseFailed?.(this.pendingAuthoritativeResponse.metadata);
+      this.pendingAuthoritativeResponse = null;
+    }
     this.pc = null;
     this.stream = null;
     this.audio = null;

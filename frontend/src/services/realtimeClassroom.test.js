@@ -242,3 +242,93 @@ it('cannot strand WE2 when child speech produces a VAD acknowledgement after WE1
   assert.equal(completed[1].responseMetadata, null);
   assert.deepEqual(interrupted, []);
 });
+
+it('reconciles authoritative WebRTC audio without data-channel audio deltas exactly once', () => {
+  const deliveries = [];
+  const realtime = new RealtimeClassroom({
+    onTutorDone: (event) => {
+      if (event.completed && event.hadAudio && event.responseMetadata?.deliveryToken) {
+        deliveries.push(event.responseMetadata.deliveryToken);
+      }
+    },
+  });
+  const metadata = {
+    hwe_request_key: 'TEACHING->TEACHING:teacher_delivery',
+    hwe_response_tag: 'teacher_delivery',
+    hwe_authoritative_phase: 'TEACHING',
+    hwe_delivery_token: 'teaching-token',
+  };
+  realtime.handleEvent({ type: 'response.created', response: { id: 'webrtc-teaching', metadata } });
+  realtime.handleEvent({ type: 'response.output_audio_transcript.done', response_id: 'webrtc-teaching', transcript: 'Counting matches one number to each object.' });
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'webrtc-teaching' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'webrtc-teaching', status: 'completed', output: [] } });
+
+  assert.equal(deliveries.length, 0);
+  assert.equal(realtime.responseStates.has('webrtc-teaching'), true);
+
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'webrtc-teaching' });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'webrtc-teaching' });
+  assert.deepEqual(deliveries, ['teaching-token']);
+});
+
+it('does not acknowledge interrupted authoritative WebRTC audio without deltas', () => {
+  const completed = [];
+  const realtime = new RealtimeClassroom({ onTutorDone: (event) => completed.push(event) });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'interrupted-webrtc', metadata: {
+    hwe_request_key: 'WE1', hwe_response_tag: 'teacher_delivery',
+    hwe_authoritative_phase: 'WORKED_EXAMPLE_1', hwe_delivery_token: 'token-we1',
+  } } });
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'interrupted-webrtc' });
+  realtime.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'interrupted-webrtc', status: 'cancelled', output: [] } });
+  assert.equal(completed.length, 1);
+  assert.equal(completed[0].completed, false);
+  assert.equal(completed[0].hadAudio, false);
+});
+
+it('defers one authoritative retry until an active VAD response has drained', () => {
+  const sent = [];
+  const failed = [];
+  const realtime = new RealtimeClassroom({ onResponseFailed: (metadata) => failed.push(metadata) });
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => sent.push(JSON.parse(payload)) };
+  const authority = {
+    requestKey: 'TEACHING->TEACHING:teacher_delivery', responseTag: 'teacher_delivery',
+    authoritativePhase: 'TEACHING', deliveryToken: 'token-teaching',
+  };
+
+  realtime.createResponse('Teach the concept.', 'teacher_delivery', authority);
+  const original = sent[0];
+  realtime.handleEvent({ type: 'response.created', response: { id: 'vad-active', metadata: null } });
+  realtime.handleEvent({ type: 'error', error: {
+    event_id: original.event_id,
+    message: 'Conversation already has an active response in progress: vad-active.',
+  } });
+  assert.equal(sent.filter((event) => event.type === 'response.create').length, 1);
+  assert.equal(realtime.pendingAuthoritativeResponse.metadata.requestKey, authority.requestKey);
+
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'vad-active' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'vad-active', status: 'completed', output: [] } });
+  assert.equal(sent.filter((event) => event.type === 'response.create').length, 1);
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'vad-active' });
+
+  assert.equal(sent.filter((event) => event.type === 'response.create').length, 2);
+  assert.equal(sent[1].response.metadata.hwe_delivery_token, 'token-teaching');
+  assert.deepEqual(failed, []);
+});
+
+it('ignores stale playback completion and cannot acknowledge a newer delivery', () => {
+  const completed = [];
+  const realtime = new RealtimeClassroom({ onTutorDone: (event) => completed.push(event) });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'old-response' });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'new-response', metadata: {
+    hwe_request_key: 'WE2', hwe_response_tag: 'teacher_delivery',
+    hwe_authoritative_phase: 'WORKED_EXAMPLE_2', hwe_delivery_token: 'token-we2',
+  } } });
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'new-response' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'new-response', status: 'completed', output: [] } });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'old-response' });
+  assert.equal(completed.length, 0);
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'new-response' });
+  assert.equal(completed[0].responseMetadata.deliveryToken, 'token-we2');
+});
