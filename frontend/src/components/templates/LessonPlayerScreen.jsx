@@ -570,7 +570,15 @@ export default function LessonPlayerScreen({
             );
           }
         },
-        onToolCall: async ({ name, callId, arguments: rawArguments }) => {
+        onToolCall: async ({ name, callId, arguments: rawArguments, responseMetadata }) => {
+          const originatingRequestKey = responseMetadata?.requestKey || null;
+          if (originatingRequestKey) {
+            realtimeRequestedTurnRef.current.release(originatingRequestKey);
+            traceRealtimeAuthority('request_key.released', {
+              requestKey: originatingRequestKey,
+              reason: 'function_call',
+            });
+          }
           if (name !== 'submit_academic_response') return;
           const authoritativePhase = realtimeStateRef.current?.current_phase;
           const academicPhases = ['UNDERSTANDING_CHECK', 'GUIDED_PRACTICE', 'APPLICATION', 'MASTERY_CHECK'];

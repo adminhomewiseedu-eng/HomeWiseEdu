@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { RealtimeClassroom } from './realtimeClassroom.js';
+import { RealtimeRequestLedger } from '../utils/realtimeRequestLedger.js';
 
 it('delivers completed microphone transcripts to the application', () => {
   let heard = '';
@@ -73,6 +74,121 @@ it('delivers realtime function calls without treating them as completed speech',
   assert.equal(toolCall.name, 'submit_academic_response');
   assert.equal(toolCall.callId, 'call-1');
   assert.equal(tutorDone, 0);
+});
+
+it('propagates immutable originating authority metadata through a function call', () => {
+  const calls = [];
+  const realtime = new RealtimeClassroom({ onToolCall: (call) => calls.push(call) });
+  const wireMetadata = {
+    hwe_request_key: 'TEACHING->TEACHING:teacher_delivery',
+    hwe_response_tag: 'teacher_delivery',
+    hwe_authoritative_phase: 'TEACHING',
+    hwe_delivery_token: 'teaching-token',
+  };
+  realtime.handleEvent({ type: 'response.created', response: { id: 'teaching-tool', metadata: wireMetadata } });
+  realtime.handleEvent({
+    type: 'response.done',
+    response: {
+      id: 'teaching-tool', status: 'completed',
+      output: [{ type: 'function_call', name: 'submit_academic_response', call_id: 'call-teaching', arguments: '{}' }],
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].responseId, 'teaching-tool');
+  assert.equal(calls[0].responseStatus, 'completed');
+  assert.equal(calls[0].interrupted, false);
+  assert.deepEqual(calls[0].responseMetadata, {
+    requestKey: 'TEACHING->TEACHING:teacher_delivery',
+    responseTag: 'teacher_delivery',
+    authoritativePhase: 'TEACHING',
+    deliveryToken: 'teaching-token',
+  });
+  assert.equal(Object.isFrozen(calls[0].responseMetadata), true);
+});
+
+it('releases a function-call request and resumes one bound authoritative delivery after tool output', () => {
+  const sent = [];
+  const acknowledgements = [];
+  const ledger = new RealtimeRequestLedger();
+  const authority = {
+    requestKey: 'TEACHING->TEACHING:teacher_delivery', responseTag: 'teacher_delivery',
+    authoritativePhase: 'TEACHING', deliveryToken: 'teaching-token',
+  };
+  ledger.reserve(authority);
+  let realtime;
+  realtime = new RealtimeClassroom({
+    onToolCall: ({ callId, responseMetadata }) => {
+      ledger.release(responseMetadata?.requestKey);
+      realtime.sendFunctionOutput(callId, { accepted_as_academic_evidence: false }, 'Acknowledge briefly.', 'teacher_conversation');
+    },
+    onTutorDone: ({ completed, hadAudio, responseTag, responseMetadata }) => {
+      if (responseTag === 'teacher_conversation') {
+        const resumed = ledger.reserve(authority);
+        if (resumed) realtime.createResponse('Resume teaching.', 'teacher_delivery', resumed);
+      } else if (completed && hadAudio && responseMetadata?.deliveryToken) {
+        acknowledgements.push(responseMetadata.deliveryToken);
+      }
+    },
+  });
+  realtime.pc = { connectionState: 'connected' };
+  realtime.dc = { readyState: 'open', send: (payload) => sent.push(JSON.parse(payload)) };
+
+  realtime.handleEvent({ type: 'response.created', response: { id: 'tool-origin', metadata: {
+    hwe_request_key: authority.requestKey, hwe_response_tag: authority.responseTag,
+    hwe_authoritative_phase: authority.authoritativePhase, hwe_delivery_token: authority.deliveryToken,
+  } } });
+  const functionDone = {
+    type: 'response.done',
+    response: { id: 'tool-origin', status: 'completed', output: [{
+      type: 'function_call', name: 'submit_academic_response', call_id: 'call-1', arguments: '{}',
+    }] },
+  };
+  realtime.handleEvent(functionDone);
+  realtime.handleEvent(functionDone);
+  assert.equal(ledger.has(authority.requestKey), false);
+  assert.equal(acknowledgements.length, 0);
+  assert.equal(sent.filter((event) => event.type === 'response.create').length, 1);
+  assert.equal(sent[1].response.metadata.hwe_response_tag, 'teacher_conversation');
+  assert.equal(sent[1].response.metadata.hwe_delivery_token, undefined);
+
+  realtime.handleEvent({ type: 'response.created', response: { id: 'tool-follow-up', metadata: sent[1].response.metadata } });
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'tool-follow-up' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'tool-follow-up', status: 'completed', output: [] } });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'tool-follow-up' });
+
+  const creates = sent.filter((event) => event.type === 'response.create');
+  assert.equal(creates.length, 2);
+  assert.equal(creates[1].response.metadata.hwe_request_key, authority.requestKey);
+  assert.equal(creates[1].response.metadata.hwe_authoritative_phase, authority.authoritativePhase);
+  assert.equal(creates[1].response.metadata.hwe_delivery_token, authority.deliveryToken);
+  assert.equal(creates[1].response.metadata.hwe_response_tag, authority.responseTag);
+
+  realtime.handleEvent({ type: 'response.created', response: { id: 'resumed-teaching', metadata: creates[1].response.metadata } });
+  realtime.handleEvent({ type: 'response.output_audio.done', response_id: 'resumed-teaching' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'resumed-teaching', status: 'completed', output: [] } });
+  realtime.handleEvent({ type: 'output_audio_buffer.stopped', response_id: 'resumed-teaching' });
+  assert.deepEqual(acknowledgements, ['teaching-token']);
+});
+
+it('keeps an interrupted authoritative function-call response recoverable without acknowledging it', () => {
+  const calls = [];
+  const completed = [];
+  const realtime = new RealtimeClassroom({
+    onToolCall: (call) => calls.push(call),
+    onTutorDone: (event) => completed.push(event),
+  });
+  realtime.handleEvent({ type: 'response.created', response: { id: 'interrupted-tool', metadata: {
+    hwe_request_key: 'WE2->WE2', hwe_response_tag: 'teacher_delivery',
+    hwe_authoritative_phase: 'WORKED_EXAMPLE_2', hwe_delivery_token: 'token-we2',
+  } } });
+  realtime.handleEvent({ type: 'input_audio_buffer.speech_started' });
+  realtime.handleEvent({ type: 'response.done', response: { id: 'interrupted-tool', status: 'cancelled', output: [{
+    type: 'function_call', name: 'submit_academic_response', call_id: 'call-interrupted', arguments: '{}',
+  }] } });
+  assert.equal(calls[0].interrupted, true);
+  assert.equal(calls[0].responseMetadata.deliveryToken, 'token-we2');
+  assert.deepEqual(completed, []);
 });
 
 it('returns tool output to the same realtime conversation and starts tagged audio', () => {

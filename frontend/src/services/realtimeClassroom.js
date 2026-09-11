@@ -258,12 +258,17 @@ export class RealtimeClassroom {
       if (responseId && this.completedResponseIds.has(responseId)) return;
       const functionCalls = (event.response?.output || []).filter((item) => item.type === 'function_call');
       if (functionCalls.length) {
+        const state = responseId ? this.responseStates.get(responseId) : null;
         if (responseId) this.completedResponseIds.add(responseId);
         if (responseId) this.responseStates.delete(responseId);
         functionCalls.forEach((call) => this.handlers.onToolCall?.({
           name: call.name,
           callId: call.call_id,
           arguments: call.arguments || '{}',
+          responseId,
+          responseStatus: event.response?.status || null,
+          responseMetadata: state?.metadata || null,
+          interrupted: Boolean(state?.interrupted || event.response?.status === 'cancelled'),
         }));
         this.flushPendingAuthoritativeResponse();
         return;
