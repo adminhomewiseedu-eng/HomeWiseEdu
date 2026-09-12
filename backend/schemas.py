@@ -314,6 +314,7 @@ class QuizSubmission(BaseModel):
     lesson_id: int
     day_number: int = 1
     answers: List[QuizAnswer]
+    submission_id: Optional[str] = None
 
 class QuizResultOut(BaseModel):
     score: int
@@ -322,6 +323,8 @@ class QuizResultOut(BaseModel):
     xp_earned: int
     passed: bool
     feedback: str
+    attempt_id: Optional[int] = None
+    submission_id: Optional[str] = None
 
 # AI Guidance Chat Schema
 class AITutorChatRequest(BaseModel):

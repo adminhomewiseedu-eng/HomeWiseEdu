@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Float, JSON, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -106,6 +106,7 @@ class Child(Base):
     progress_records = relationship("StudentProgress", back_populates="child", cascade="all, delete-orphan")
     evidence_records = relationship("LearningEvidence", back_populates="child", cascade="all, delete-orphan")
     sessions = relationship("LessonSession", back_populates="child", cascade="all, delete-orphan")
+    quiz_attempts = relationship("QuizAttempt", back_populates="child", cascade="all, delete-orphan")
 
 
 class Subject(Base):
@@ -180,6 +181,7 @@ class Lesson(Base):
     days = relationship("LessonDay", back_populates="lesson", cascade="all, delete-orphan", order_by="LessonDay.day_number")
     quiz_questions = relationship("QuizQuestion", back_populates="lesson", cascade="all, delete-orphan")
     progress_records = relationship("StudentProgress", back_populates="lesson")
+    quiz_attempts = relationship("QuizAttempt", back_populates="lesson", cascade="all, delete-orphan")
     sessions = relationship("LessonSession", back_populates="lesson", cascade="all, delete-orphan")
 
 
@@ -282,6 +284,37 @@ class StudentProgress(Base):
 
     child = relationship("Child", back_populates="progress_records")
     lesson = relationship("Lesson", back_populates="progress_records")
+
+
+class QuizAttempt(Base):
+    """Immutable grading snapshot for one completed quiz submission."""
+    __tablename__ = "quiz_attempts"
+
+    id = Column(Integer, primary_key=True)
+    submission_id = Column(String(64), nullable=False)
+    child_id = Column(Integer, ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    day_number = Column(Integer, nullable=False, default=1)
+    score_percentage = Column(Integer, nullable=False)
+    correct_count = Column(Integer, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+    submitted_answers = Column(JSON, nullable=False)
+    passed = Column(Boolean, nullable=False)
+    xp_earned = Column(Integer, nullable=False, default=0)
+    completed_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
+
+    __table_args__ = (
+        CheckConstraint("score_percentage >= 0 AND score_percentage <= 100", name="ck_quiz_attempt_score_percentage"),
+        CheckConstraint("correct_count >= 0", name="ck_quiz_attempt_correct_count"),
+        CheckConstraint("total_questions >= 0", name="ck_quiz_attempt_total_questions"),
+        CheckConstraint("correct_count <= total_questions", name="ck_quiz_attempt_counts"),
+        Index("ix_quiz_attempts_submission_id", "submission_id", unique=True),
+        Index("ix_quiz_attempts_child_lesson_day_completed", "child_id", "lesson_id", "day_number", "completed_at"),
+    )
+
+    child = relationship("Child", back_populates="quiz_attempts")
+    lesson = relationship("Lesson", back_populates="quiz_attempts")
 
 
 class LearningEvidence(Base):

@@ -2,13 +2,15 @@ import json
 import logging
 import re
 import secrets
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from ..database import get_db
 from ..config import settings
-from ..models import Lesson, LessonDay, Child, StudentProgress, QuizQuestion, LessonSession, AIInteraction, User, Unit
+from ..models import Lesson, LessonDay, Child, StudentProgress, QuizQuestion, QuizAttempt, LessonSession, AIInteraction, User, Unit
 from ..schemas import AITutorChatRequest, AITutorChatResponse, QuizSubmission, QuizResultOut
 from ..services.openai_service import get_tutor_response, is_legacy_or_markdown_heavy, evaluate_academic_response
 from ..utils.levels import get_level_label
@@ -873,6 +875,43 @@ def _require_published_day(lesson: Lesson, day_number: int, current_user: User) 
     if lesson.days and (not day or (current_user.role != "admin" and (day.status or "").lower() not in {"active", "published"})):
         raise HTTPException(status_code=404, detail="Lesson day not found")
 
+
+def _award_quiz_xp(child: Child, amount: int) -> None:
+    child.xp += amount
+
+
+def _update_quiz_progress(db: Session, sub: QuizSubmission, child: Child, percentage: int, proposed_xp: int) -> int:
+    progress = db.query(StudentProgress).filter(
+        StudentProgress.child_id == sub.child_id,
+        StudentProgress.lesson_id == sub.lesson_id,
+        StudentProgress.day_number == sub.day_number,
+    ).first()
+
+    if not progress:
+        progress = StudentProgress(
+            child_id=sub.child_id,
+            lesson_id=sub.lesson_id,
+            day_number=sub.day_number,
+            activity_type="Practice",
+            status="completed" if percentage >= 60 else "in_progress",
+            quiz_score=percentage,
+            mastery_status="mastered" if percentage >= 80 else ("competent" if percentage >= 60 else "developing"),
+            quiz_xp_awarded=True,
+        )
+        db.add(progress)
+        _award_quiz_xp(child, proposed_xp)
+        return proposed_xp
+
+    if percentage >= 60:
+        progress.status = "completed"
+    progress.quiz_score = percentage
+    progress.mastery_status = "mastered" if percentage >= 80 else ("competent" if percentage >= 60 else "developing")
+    if not progress.quiz_xp_awarded:
+        progress.quiz_xp_awarded = True
+        _award_quiz_xp(child, proposed_xp)
+        return proposed_xp
+    return 0
+
 @router.get("/{lesson_id}/quiz")
 def get_quiz(
     lesson_id: int,
@@ -898,12 +937,25 @@ def submit_quiz(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    submission_id = (sub.submission_id or str(uuid.uuid4())).strip()
+    if not submission_id or len(submission_id) > 64:
+        raise HTTPException(status_code=422, detail="Invalid quiz submission ID")
+
     lesson = db.query(Lesson).filter(Lesson.id == sub.lesson_id).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     _require_published_day(lesson, sub.day_number, current_user)
     
     child = authorize_child(db, current_user, sub.child_id)
+
+    existing_attempt = db.query(QuizAttempt).filter(QuizAttempt.submission_id == submission_id).first()
+    if existing_attempt:
+        if existing_attempt.child_id != sub.child_id:
+            raise HTTPException(status_code=409, detail="Quiz submission ID is already in use")
+        if existing_attempt.lesson_id != sub.lesson_id or existing_attempt.day_number != sub.day_number:
+            raise HTTPException(status_code=409, detail="Quiz submission ID does not match this quiz")
+        return _quiz_attempt_result(existing_attempt)
+
     _ready_session(db, sub.child_id, sub.lesson_id, sub.day_number)
 
     questions = _quiz_questions_for_lesson(db, lesson)
@@ -912,57 +964,71 @@ def submit_quiz(
 
     correct_count = 0
     total_questions = len(questions)
-    answer_map = {a.question_id: str(a.selected_answer).strip().lower() for a in sub.answers if a.selected_answer is not None}
+    raw_answer_map = {a.question_id: str(a.selected_answer) for a in sub.answers if a.selected_answer is not None}
+    answer_map = {question_id: answer.strip().lower() for question_id, answer in raw_answer_map.items()}
+    grading_snapshot = []
 
     for q in questions:
         expected = str(q.correct_answer).strip().lower()
         actual = answer_map.get(q.id)
-        if actual == expected:
+        is_correct = actual == expected
+        if is_correct:
             correct_count += 1
+        grading_snapshot.append({
+            "question_id": q.id,
+            "selected_answer": raw_answer_map.get(q.id),
+            "correct_answer": q.correct_answer,
+            "is_correct": is_correct,
+        })
 
     percentage = int((correct_count / total_questions) * 100) if total_questions > 0 else 100
     proposed_xp = 20 + (correct_count * 5)
 
-    # Record or update StudentProgress immediately in database
-    progress = db.query(StudentProgress).filter(
-        StudentProgress.child_id == sub.child_id,
-        StudentProgress.lesson_id == sub.lesson_id,
-        StudentProgress.day_number == sub.day_number
-    ).first()
-
-    if not progress:
-        progress = StudentProgress(
+    try:
+        # Progress, XP, and immutable attempt are committed as one transaction.
+        xp_earned = _update_quiz_progress(db, sub, child, percentage, proposed_xp)
+        attempt = QuizAttempt(
+            submission_id=submission_id,
             child_id=sub.child_id,
             lesson_id=sub.lesson_id,
             day_number=sub.day_number,
-            activity_type="Practice",
-            status="completed" if percentage >= 60 else "in_progress",
-            quiz_score=percentage,
-            mastery_status="mastered" if percentage >= 80 else ("competent" if percentage >= 60 else "developing"),
-            quiz_xp_awarded=True
+            score_percentage=percentage,
+            correct_count=correct_count,
+            total_questions=total_questions,
+            submitted_answers=grading_snapshot,
+            passed=percentage >= 60,
+            xp_earned=xp_earned,
         )
-        db.add(progress)
-        xp_earned = proposed_xp
-        child.xp += xp_earned
-    else:
-        if percentage >= 60:
-            progress.status = "completed"
-        progress.quiz_score = percentage
-        progress.mastery_status = "mastered" if percentage >= 80 else ("competent" if percentage >= 60 else "developing")
-        if not progress.quiz_xp_awarded:
-            progress.quiz_xp_awarded = True
-            xp_earned = proposed_xp
-            child.xp += xp_earned
-        else:
-            xp_earned = 0
+        db.add(attempt)
+        db.commit()
+        db.refresh(attempt)
+    except IntegrityError:
+        db.rollback()
+        concurrent_attempt = db.query(QuizAttempt).filter(QuizAttempt.submission_id == submission_id).first()
+        if (
+            concurrent_attempt
+            and concurrent_attempt.child_id == sub.child_id
+            and concurrent_attempt.lesson_id == sub.lesson_id
+            and concurrent_attempt.day_number == sub.day_number
+        ):
+            return _quiz_attempt_result(concurrent_attempt)
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
-    db.commit()
+    return _quiz_attempt_result(attempt)
 
+
+def _quiz_attempt_result(attempt: QuizAttempt) -> QuizResultOut:
+    percentage = attempt.score_percentage
     return QuizResultOut(
-        score=correct_count,
-        total_questions=total_questions,
+        score=attempt.correct_count,
+        total_questions=attempt.total_questions,
         percentage=percentage,
-        xp_earned=xp_earned,
-        passed=percentage >= 60,
-        feedback="Perfect score! You're ready to submit your learning evidence. 🏆" if percentage == 100 else f"You scored {percentage}% ({correct_count}/{total_questions})! Great practice—let's prove your learning."
+        xp_earned=attempt.xp_earned,
+        passed=attempt.passed,
+        feedback="Perfect score! You're ready to submit your learning evidence. 🏆" if percentage == 100 else f"You scored {percentage}% ({attempt.correct_count}/{attempt.total_questions})! Great practice—let's prove your learning.",
+        attempt_id=attempt.id,
+        submission_id=attempt.submission_id,
     )

@@ -102,12 +102,13 @@ export const lessonAPI = {
   sendRealtimePedagogyEvent: (payload) => api.post('/api/lessons/realtime-event', payload),
   getQuiz: (childId, lessonId, dayNumber = 1) =>
     api.get(`/api/lessons/${lessonId}/quiz`, { params: { child_id: childId, day_number: dayNumber } }),
-  submitQuiz: (childId, lessonId, dayNumber, answers) =>
+  submitQuiz: (childId, lessonId, dayNumber, answers, submissionId) =>
     api.post('/api/lessons/submit-quiz', {
       child_id: childId,
       lesson_id: lessonId,
       day_number: dayNumber,
       answers,
+      submission_id: submissionId,
     }),
 };
 

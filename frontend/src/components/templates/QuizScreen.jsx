@@ -19,9 +19,12 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(true);
+  const [submitError, setSubmitError] = useState('');
 
   const isMountedRef = useRef(true);
   const spokenQuestionIdRef = useRef(null);
+  const submissionIdRef = useRef(null);
+  const submittingRef = useRef(false);
 
   // Play audio safely using authoritative single audio coordinator
   const playTutorVoice = useCallback(async (textToSpeak) => {
@@ -115,7 +118,9 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
   }
 
   const handleSubmitAnswer = async () => {
-    if (!selectedOpt || isAnswered) return;
+    if (!selectedOpt || isAnswered || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitError('');
     speechService.cancelAllSpeech();
     setIsAnswered(true);
 
@@ -162,21 +167,26 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
         setQIdx(qIdx + 1);
         setSelectedOpt(null);
         setIsAnswered(false);
+        submittingRef.current = false;
       } else {
         const effectiveChildId = child?.id || 1;
         try {
-          const res = await lessonAPI.submitQuiz(effectiveChildId, effectiveLessonId, dayNumber, updatedAnswers);
+          if (!submissionIdRef.current) {
+            submissionIdRef.current = globalThis.crypto?.randomUUID?.()
+              || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          }
+          const res = await lessonAPI.submitQuiz(
+            effectiveChildId,
+            effectiveLessonId,
+            dayNumber,
+            updatedAnswers,
+            submissionIdRef.current,
+          );
           onQuizComplete(res.data);
         } catch (e) {
-          const pct = Math.round((finalScore / questions.length) * 100);
-          onQuizComplete({
-            score: finalScore,
-            total_questions: questions.length,
-            percentage: pct,
-            xp_earned: 20 + (finalScore * 5),
-            passed: pct >= 60,
-            feedback: pct === 100 ? "Perfect score! 🏆" : `You scored ${pct}%!`
-          });
+          setSubmitError('Your quiz could not be saved. Please submit again.');
+          setIsAnswered(false);
+          submittingRef.current = false;
         }
       }
     });
@@ -207,6 +217,7 @@ export default function QuizScreen({ lesson, lessonId, dayNumber = 1, child, onE
             onSelectOption={(opt) => !isAnswered && setSelectedOpt(opt)}
             onSubmitAnswer={handleSubmitAnswer}
           />
+          {submitError && <p className="quiz-submit-error" role="alert">{submitError}</p>}
         </div>
       </main>
 
