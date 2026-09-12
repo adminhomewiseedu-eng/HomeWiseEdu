@@ -52,6 +52,10 @@ def ensure_db_schema():
         lesson_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(lessons)"))]
         if lesson_columns and "curriculum_country" not in lesson_columns:
             conn.execute(text("ALTER TABLE lessons ADD COLUMN curriculum_country VARCHAR"))
+        if lesson_columns and "archived" not in lesson_columns:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN archived BOOLEAN NOT NULL DEFAULT 0"))
+        if lesson_columns and "quiz_review_required" not in lesson_columns:
+            conn.execute(text("ALTER TABLE lessons ADD COLUMN quiz_review_required BOOLEAN NOT NULL DEFAULT 0"))
         day_columns = [row[1] for row in conn.execute(text("PRAGMA table_info(lesson_days)"))]
         if day_columns and "origin_of_knowledge" not in day_columns:
             conn.execute(text("ALTER TABLE lesson_days ADD COLUMN origin_of_knowledge TEXT"))

@@ -82,6 +82,13 @@ export const curriculumAPI = {
   }),
   setLessonPublication: (lessonId, publish) =>
     api.patch(`/api/curriculum/admin/lessons/${lessonId}/publication`, { publish }),
+  setLessonArchive: (lessonId, archived) =>
+    api.patch(`/api/curriculum/admin/lessons/${lessonId}/archive`, { archived }),
+  setLessonQuizReview: (lessonId, reviewRequired) =>
+    api.patch(`/api/curriculum/admin/lessons/${lessonId}/quiz-review`, { review_required: reviewRequired }),
+  getLessonDependencies: (lessonId) =>
+    api.get(`/api/curriculum/admin/lessons/${lessonId}/dependencies`),
+  deleteLesson: (lessonId) => api.delete(`/api/curriculum/admin/lessons/${lessonId}`),
   updateLessonDay: (dayId, payload) => api.patch(`/api/curriculum/admin/lesson-days/${dayId}`, payload),
 };
 

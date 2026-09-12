@@ -63,6 +63,13 @@ def readable_text(value: Any) -> str:
     return "; ".join(str(part).strip() for part in parts if str(part).strip())
 
 
+def _same_content(left: Any, right: Any) -> bool:
+    """Compare authored values structurally without treating formatting as a change."""
+    return json.dumps(left, sort_keys=True, ensure_ascii=True, default=str) == json.dumps(
+        right, sort_keys=True, ensure_ascii=True, default=str
+    )
+
+
 def _activity(lesson_type: str, day_number: int) -> str:
     lowered = lesson_type.lower()
     if "explore" in lowered:
@@ -89,9 +96,13 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
     stats = {"rows_processed": 0, "subjects_created": 0, "units_created": 0,
              "lessons_created": 0, "lessons_updated": 0, "days_created": 0,
              "days_updated": 0, "days_processed": 0, "pending_days": 0,
-             "skipped_duplicates": 0, "validation_failures": 0}
+             "skipped_duplicates": 0, "validation_failures": 0,
+             "quiz_reviews_flagged": 0, "hierarchy_identity_changes": []}
     seen_days = set()
     touched_lessons = set()
+    flagged_lessons = set()
+    new_lesson_ids = set()
+    reported_identity_changes = set()
     legacy_lesson_numbers = {}
     for row_number, raw in enumerate(raw_rows, start=2):
         row = {_key(k): (v or "").strip() for k, v in raw.items() if k}
@@ -126,11 +137,19 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
 
         subject = db.query(Subject).filter(Subject.slug == slugify(subject_name)).first()
         if not subject:
+            marker = ("subject", slugify(subject_name))
+            if marker not in reported_identity_changes:
+                stats["hierarchy_identity_changes"].append({"type": "new_subject", "value": subject_name, "row": row_number})
+                reported_identity_changes.add(marker)
             subject = Subject(title=subject_name, slug=slugify(subject_name), icon="📐" if "math" in subject_name.lower() else "📚",
                               color="#38BDF8", description=f"Structured curriculum pathway for {subject_name}")
             db.add(subject); db.flush(); stats["subjects_created"] += 1
         unit = db.query(Unit).filter(Unit.subject_id == subject.id, Unit.level == level_num, Unit.title == unit_title).first()
         if not unit:
+            marker = ("unit", subject.id, level_num, unit_title)
+            if marker not in reported_identity_changes:
+                stats["hierarchy_identity_changes"].append({"type": "new_unit", "value": unit_title, "subject": subject_name, "level": level_num, "row": row_number})
+                reported_identity_changes.add(marker)
             unit = Unit(subject_id=subject.id, level=level_num, title=unit_title,
                         order_num=db.query(Unit).filter(Unit.subject_id == subject.id, Unit.level == level_num).count() + 1)
             db.add(unit); db.flush(); stats["units_created"] += 1
@@ -141,12 +160,21 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
         stable_lesson_title = lesson_title if legacy_format else f"Lesson {lesson_number}: {subtopic}"
         lesson = db.query(Lesson).filter(Lesson.unit_id == unit.id, Lesson.level == level_num, Lesson.order_num == lesson_number).first()
         if not lesson:
+            marker = ("lesson", unit.id, level_num, lesson_number)
+            if marker not in reported_identity_changes:
+                stats["hierarchy_identity_changes"].append({"type": "new_lesson", "lesson_number": lesson_number, "unit": unit_title, "subject": subject_name, "level": level_num, "row": row_number})
+                reported_identity_changes.add(marker)
             lesson = Lesson(unit_id=unit.id, level=level_num, title=stable_lesson_title, topic=subtopic, order_num=lesson_number,
                             curriculum_country=row.get("curriculumcountry") or None, objectives=objectives,
                             learn_content=key_concept or row.get("aiteachingscript"), examples=[], vocabulary=[],
                             key_points=objectives, default_evidence_task=f"Demonstrate your understanding of {subtopic}.")
-            db.add(lesson); db.flush(); stats["lessons_created"] += 1
+            db.add(lesson); db.flush(); stats["lessons_created"] += 1; new_lesson_ids.add(lesson.id)
         else:
+            lesson_changed = any((
+                not _same_content(lesson.topic, subtopic),
+                not _same_content(lesson.objectives or [], objectives or lesson.objectives or []),
+                not _same_content(lesson.learn_content, key_concept or row.get("aiteachingscript") or lesson.learn_content),
+            ))
             lesson.title, lesson.topic = stable_lesson_title, subtopic
             lesson.curriculum_country = row.get("curriculumcountry") or lesson.curriculum_country
             lesson.objectives = objectives or lesson.objectives
@@ -154,12 +182,24 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
             lesson.key_points = objectives or lesson.key_points
             if lesson.id not in touched_lessons:
                 stats["lessons_updated"] += 1
+            if lesson_changed:
+                lesson.quiz_review_required = True
+                flagged_lessons.add(lesson.id)
         touched_lessons.add(lesson.id)
 
         day = db.query(LessonDay).filter(LessonDay.lesson_id == lesson.id, LessonDay.day_number == day_number).first()
         created = day is None
         if created:
             day = LessonDay(lesson_id=lesson.id, day_number=day_number); db.add(day)
+        elif any((
+            not _same_content(day.learning_objectives or [], objectives),
+            not _same_content(day.key_concept, key_concept),
+            not _same_content(day.ai_script, row.get("aiteachingscript")),
+            not _same_content(day.practice_questions or [], parse_list_safe(row.get("practicequestion"))),
+        )):
+            lesson.quiz_review_required = True
+            flagged_lessons.add(lesson.id)
+        previous_status = day.status if not created else None
         day.activity_type = _activity(lesson_type, day_number)
         day.title = lesson_title if not legacy_format else f"{lesson_title} — Day {day_number} ({day.activity_type})"
         day.learning_objectives, day.key_concept = objectives, key_concept
@@ -170,10 +210,11 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
         day.origin_of_knowledge, day.video_url = row.get("originofknowledge"), row.get("video1")
         day.practice_questions, day.vocabulary = parse_list_safe(row.get("practicequestion")), vocabulary
         day.reading_recommendations = parse_list_safe(row.get("readingrecommendations"))
-        day.status = (row.get("status") or "Pending").lower()
+        day.status = "pending" if lesson.id in new_lesson_ids or created else (previous_status or "pending")
         stats["days_created" if created else "days_updated"] += 1
         stats["pending_days"] += int(day.status == "pending")
         stats["rows_processed"] += 1
         stats["days_processed"] += 1
         db.flush()
+    stats["quiz_reviews_flagged"] = len(flagged_lessons)
     return stats

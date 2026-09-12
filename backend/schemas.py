@@ -233,6 +233,8 @@ class LessonSummaryOut(BaseModel):
     topic: Optional[str] = None
     order_num: int
     curriculum_country: Optional[str] = None
+    archived: bool = False
+    quiz_review_required: bool = False
     default_evidence_task: Optional[str] = None
 
 class LessonDetailOut(BaseModel):
@@ -244,6 +246,8 @@ class LessonDetailOut(BaseModel):
     topic: Optional[str] = None
     order_num: int
     curriculum_country: Optional[str] = None
+    archived: bool = False
+    quiz_review_required: bool = False
     objectives: List[str]
     learn_content: str
     examples: List[Dict[str, Any]]

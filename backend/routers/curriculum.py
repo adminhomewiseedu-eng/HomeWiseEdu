@@ -3,7 +3,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from ..database import get_db
-from ..models import Subject, Unit, Lesson, LessonDay, QuizQuestion
+from ..models import (Subject, Unit, Lesson, LessonDay, QuizQuestion, QuizAttempt,
+                      StudentProgress, LessonSession, LearningEvidence, AIInteraction)
 from ..schemas import SubjectOut, LessonDetailOut, LessonDayOut
 from ..models import User
 from .auth import get_current_user, require_admin
@@ -19,6 +20,14 @@ PUBLISHED_STATUSES = {"active", "published"}
 
 class PublishLessonRequest(BaseModel):
     publish: bool = True
+
+
+class ArchiveLessonRequest(BaseModel):
+    archived: bool = True
+
+
+class QuizReviewRequest(BaseModel):
+    review_required: bool
 
 
 class LessonDayUpdate(BaseModel):
@@ -45,7 +54,7 @@ def get_lesson_detail(
     lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
-    if current_user.role != "admin" and lesson.days and not any((day.status or "").lower() in PUBLISHED_STATUSES for day in lesson.days):
+    if current_user.role != "admin" and (lesson.archived or (lesson.days and not any((day.status or "").lower() in PUBLISHED_STATUSES for day in lesson.days))):
         raise HTTPException(status_code=404, detail="Lesson not found")
     # Quiz questions (and their answers) are available only through the
     # readiness-gated lesson quiz endpoint.
@@ -96,7 +105,7 @@ async def validate_curriculum_csv(file: UploadFile = File(...), db: Session = De
     try:
         stats = import_curriculum_csv_data(contents.decode("utf-8-sig"), db)
         db.rollback()
-        return {"valid": True, "stats": stats, "message": "Validation passed. Import will keep lesson days pending."}
+        return {"valid": True, "stats": stats, "message": "Validation passed. New lessons will be pending; matched lessons keep their publication state."}
     except (UnicodeDecodeError, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -110,7 +119,8 @@ def list_admin_lessons(response: Response, db: Session = Depends(get_db), curren
         "id": lesson.id, "title": lesson.title, "subtopic": lesson.topic, "lesson_number": lesson.order_num,
         "unit": lesson.unit.title, "subject": lesson.unit.subject.title, "level": lesson.level,
         "curriculum_country": lesson.curriculum_country,
-        "status": "published" if lesson.days and all((d.status or "").lower() in PUBLISHED_STATUSES for d in lesson.days) else "pending",
+        "archived": lesson.archived, "quiz_review_required": lesson.quiz_review_required,
+        "status": "archived" if lesson.archived else ("published" if lesson.days and all((d.status or "").lower() in PUBLISHED_STATUSES for d in lesson.days) else "pending"),
         "days": len(lesson.days), "lesson_days": [{"id": day.id, "day_number": day.day_number,
             "activity_type": day.activity_type, "status": day.status} for day in lesson.days],
     } for lesson in lessons]
@@ -122,6 +132,8 @@ def set_lesson_publication(lesson_id: int, payload: PublishLessonRequest, db: Se
     lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
+    if payload.publish and lesson.archived:
+        raise HTTPException(status_code=409, detail="Archived lessons must be restored before publication")
     if len(lesson.days) != 3:
         raise HTTPException(status_code=409, detail="A lesson must have exactly three days before publication")
     for day in lesson.days:
@@ -136,8 +148,79 @@ def update_lesson_day(day_id: int, payload: LessonDayUpdate, db: Session = Depen
     day = db.query(LessonDay).filter(LessonDay.id == day_id).first()
     if not day:
         raise HTTPException(status_code=404, detail="Lesson day not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    assessment_fields = {"learning_objectives", "key_concept", "ai_script", "practice_questions"}
+    if any(field in assessment_fields and getattr(day, field) != value for field, value in changes.items()):
+        day.lesson.quiz_review_required = True
+    for field, value in changes.items():
         setattr(day, field, value)
     db.commit()
     db.refresh(day)
     return day
+
+
+def _lesson_dependency_counts(db: Session, lesson_id: int) -> Dict[str, int]:
+    return {
+        "student_progress": db.query(StudentProgress).filter(StudentProgress.lesson_id == lesson_id).count(),
+        "lesson_sessions": db.query(LessonSession).filter(LessonSession.lesson_id == lesson_id).count(),
+        "learning_evidence": db.query(LearningEvidence).filter(LearningEvidence.lesson_id == lesson_id).count(),
+        "ai_interactions": db.query(AIInteraction).filter(AIInteraction.lesson_id == lesson_id).count(),
+        "quiz_attempts": db.query(QuizAttempt).filter(QuizAttempt.lesson_id == lesson_id).count(),
+    }
+
+
+@router.get("/admin/lessons/{lesson_id}/dependencies")
+def get_lesson_dependencies(lesson_id: int, db: Session = Depends(get_db),
+                            current_user: User = Depends(require_admin)):
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    counts = _lesson_dependency_counts(db, lesson_id)
+    return {"lesson_id": lesson_id, "dependencies": counts, "can_delete": not any(counts.values())}
+
+
+@router.patch("/admin/lessons/{lesson_id}/archive")
+def set_lesson_archive(lesson_id: int, payload: ArchiveLessonRequest, db: Session = Depends(get_db),
+                       current_user: User = Depends(require_admin)):
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    lesson.archived = payload.archived
+    db.commit()
+    return {"lesson_id": lesson.id, "archived": lesson.archived}
+
+
+@router.patch("/admin/lessons/{lesson_id}/quiz-review")
+def set_lesson_quiz_review(lesson_id: int, payload: QuizReviewRequest, db: Session = Depends(get_db),
+                           current_user: User = Depends(require_admin)):
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    lesson.quiz_review_required = payload.review_required
+    db.commit()
+    return {"lesson_id": lesson.id, "quiz_review_required": lesson.quiz_review_required}
+
+
+@router.delete("/admin/lessons/{lesson_id}")
+def delete_lesson(lesson_id: int, db: Session = Depends(get_db),
+                  current_user: User = Depends(require_admin)):
+    # Lock the parent row so a concurrent request cannot attach new history
+    # between the dependency check and the deletion transaction.
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).with_for_update().first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    counts = _lesson_dependency_counts(db, lesson_id)
+    if any(counts.values()):
+        raise HTTPException(status_code=409, detail={
+            "message": "This lesson has student history and must be archived instead.",
+            "dependencies": counts,
+        })
+    try:
+        db.query(QuizQuestion).filter(QuizQuestion.lesson_id == lesson_id).delete(synchronize_session=False)
+        db.query(LessonDay).filter(LessonDay.lesson_id == lesson_id).delete(synchronize_session=False)
+        db.delete(lesson)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"deleted": True, "lesson_id": lesson_id}

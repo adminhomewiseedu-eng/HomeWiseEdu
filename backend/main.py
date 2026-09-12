@@ -11,7 +11,7 @@ from .database import Base, SessionLocal, engine, ensure_db_schema
 from .routers import admin, auth, curriculum, evidence, lessons, parent, reports, student, voice
 
 logger = logging.getLogger(__name__)
-MIGRATION_HEAD = "0011_quiz_attempts"
+MIGRATION_HEAD = "0012_curriculum_safety"
 
 if not settings.is_production and settings.AUTO_INIT_DB:
     Base.metadata.create_all(bind=engine)

@@ -113,6 +113,8 @@ async def create_realtime_session(
     lesson = db.query(Lesson).filter(Lesson.id == req.lesson_id).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
+    if lesson.archived and current_user.role != "admin":
+        raise HTTPException(status_code=404, detail="Lesson not found")
     active_day = next((day for day in lesson.days if day.day_number == req.day_number), None)
     if lesson.days and not active_day:
         raise HTTPException(status_code=404, detail="Lesson day not found")

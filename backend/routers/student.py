@@ -49,6 +49,7 @@ def get_student_dashboard(
         .join(Unit, Lesson.unit_id == Unit.id)
         .filter(
             Lesson.level == student_level,
+            Lesson.archived.is_(False),
             Unit.subject_id.in_(enrolled_subject_ids)
         )
         .order_by(Unit.order_num.asc(), Lesson.order_num.asc())
@@ -133,7 +134,7 @@ def get_student_dashboard(
         subj_lessons = (
             db.query(Lesson)
             .join(Unit, Lesson.unit_id == Unit.id)
-            .filter(Unit.subject_id == subj.id, Lesson.level == student_level)
+            .filter(Unit.subject_id == subj.id, Lesson.level == student_level, Lesson.archived.is_(False))
             .all()
         )
         subj_lessons = [lesson for lesson in subj_lessons if any(

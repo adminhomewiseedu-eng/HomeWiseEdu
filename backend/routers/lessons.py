@@ -431,6 +431,8 @@ async def realtime_pedagogy_event(
     lesson = db.query(Lesson).filter(Lesson.id == payload.lesson_id).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
+    if lesson.archived and current_user.role != "admin":
+        raise HTTPException(status_code=404, detail="Lesson not found")
     active_day = next((day for day in lesson.days if day.day_number == payload.day_number), None)
     if lesson.days and not active_day:
         raise HTTPException(status_code=404, detail="Lesson day not found")
@@ -569,6 +571,8 @@ async def tutor_chat_guidance(
 ):
     lesson = db.query(Lesson).filter(Lesson.id == req.lesson_id).first()
     if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    if lesson.archived and current_user.role != "admin":
         raise HTTPException(status_code=404, detail="Lesson not found")
     
     child = authorize_child(db, current_user, req.child_id)
@@ -871,6 +875,8 @@ def _quiz_questions_for_lesson(db: Session, lesson: Lesson):
 
 
 def _require_published_day(lesson: Lesson, day_number: int, current_user: User) -> None:
+    if lesson.archived and current_user.role != "admin":
+        raise HTTPException(status_code=404, detail="Lesson day not found")
     day = next((item for item in lesson.days if item.day_number == day_number), None)
     if lesson.days and (not day or (current_user.role != "admin" and (day.status or "").lower() not in {"active", "published"})):
         raise HTTPException(status_code=404, detail="Lesson day not found")

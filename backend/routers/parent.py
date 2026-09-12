@@ -141,11 +141,11 @@ def get_parent_dashboard(
         total_enrolled_lessons = (
             db.query(Lesson)
             .join(Unit, Lesson.unit_id == Unit.id)
-            .filter(Lesson.level == lvl, Unit.subject_id.in_(enrolled_ids))
+            .filter(Lesson.level == lvl, Lesson.archived.is_(False), Unit.subject_id.in_(enrolled_ids))
             .count()
         )
         if total_enrolled_lessons == 0:
-            total_enrolled_lessons = max(1, db.query(Lesson).filter(Lesson.level == lvl).count())
+            total_enrolled_lessons = max(1, db.query(Lesson).filter(Lesson.level == lvl, Lesson.archived.is_(False)).count())
 
         completed = db.query(StudentProgress).filter(
             StudentProgress.child_id == c.id, StudentProgress.status == "completed"

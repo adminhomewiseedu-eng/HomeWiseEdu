@@ -42,7 +42,7 @@ def _admin_profile_payload(admin: User, profile: AdminProfile | None) -> dict:
 
 
 def _published_lesson(lesson: Lesson) -> bool:
-    return bool(lesson.days) and all((day.status or "").lower() in PUBLISHED for day in lesson.days)
+    return not lesson.archived and bool(lesson.days) and all((day.status or "").lower() in PUBLISHED for day in lesson.days)
 
 
 def _evidence_state(item: LearningEvidence) -> str:

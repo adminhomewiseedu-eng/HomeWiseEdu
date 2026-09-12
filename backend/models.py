@@ -165,6 +165,8 @@ class Lesson(Base):
     topic = Column(String, nullable=True)
     order_num = Column(Integer, default=1)
     curriculum_country = Column(String, nullable=True)
+    archived = Column(Boolean, default=False, nullable=False)
+    quiz_review_required = Column(Boolean, default=False, nullable=False)
     
     # Structured Lesson Summary Fields
     objectives = Column(JSON, default=list)
@@ -181,7 +183,7 @@ class Lesson(Base):
     days = relationship("LessonDay", back_populates="lesson", cascade="all, delete-orphan", order_by="LessonDay.day_number")
     quiz_questions = relationship("QuizQuestion", back_populates="lesson", cascade="all, delete-orphan")
     progress_records = relationship("StudentProgress", back_populates="lesson")
-    quiz_attempts = relationship("QuizAttempt", back_populates="lesson", cascade="all, delete-orphan")
+    quiz_attempts = relationship("QuizAttempt", back_populates="lesson")
     sessions = relationship("LessonSession", back_populates="lesson", cascade="all, delete-orphan")
 
 
@@ -293,7 +295,7 @@ class QuizAttempt(Base):
     id = Column(Integer, primary_key=True)
     submission_id = Column(String(64), nullable=False)
     child_id = Column(Integer, ForeignKey("children.id", ondelete="CASCADE"), nullable=False)
-    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="RESTRICT"), nullable=False)
     day_number = Column(Integer, nullable=False, default=1)
     score_percentage = Column(Integer, nullable=False)
     correct_count = Column(Integer, nullable=False)
