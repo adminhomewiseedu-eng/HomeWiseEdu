@@ -12,7 +12,7 @@ development_outbox = []
 
 
 def email_delivery_configured() -> bool:
-    return bool(settings.RESEND_API_KEY and settings.PASSWORD_RESET_FROM_EMAIL) or bool(
+    return bool(settings.RESEND_API_KEY and settings.TRANSACTIONAL_FROM_EMAIL) or bool(
         settings.SMTP_HOST and settings.SMTP_FROM_EMAIL
     ) or (
         settings.PASSWORD_RESET_DEV_MODE and not settings.is_production
@@ -58,7 +58,7 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
   </body>
 </html>"""
 
-    if settings.RESEND_API_KEY and settings.PASSWORD_RESET_FROM_EMAIL:
+    if settings.RESEND_API_KEY and settings.TRANSACTIONAL_FROM_EMAIL:
         try:
             response = httpx.post(
                 "https://api.resend.com/emails",
@@ -66,7 +66,8 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
                     "Authorization": f"Bearer {settings.RESEND_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json={"from": settings.PASSWORD_RESET_FROM_EMAIL, "to": [recipient],
+                json={"from": settings.TRANSACTIONAL_FROM_EMAIL, "to": [recipient],
+                      "reply_to": settings.TRANSACTIONAL_REPLY_TO_EMAIL,
                       "subject": subject, "text": plain_text, "html": html},
                 timeout=10,
             )
@@ -78,7 +79,8 @@ def send_password_reset_email(recipient: str, reset_url: str) -> bool:
 
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = settings.SMTP_FROM_EMAIL
+    message["From"] = settings.TRANSACTIONAL_FROM_EMAIL or settings.SMTP_FROM_EMAIL
+    message["Reply-To"] = settings.TRANSACTIONAL_REPLY_TO_EMAIL
     message["To"] = recipient
     message.set_content(plain_text)
     message.add_alternative(html, subtype="html")

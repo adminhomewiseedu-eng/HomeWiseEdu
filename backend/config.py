@@ -41,6 +41,10 @@ class Settings(BaseModel):
     PASSWORD_RESET_DEV_MODE: bool = os.getenv("PASSWORD_RESET_DEV_MODE", "false").lower() in {"1", "true", "yes"}
     RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
     PASSWORD_RESET_FROM_EMAIL: str = os.getenv("PASSWORD_RESET_FROM_EMAIL", "")
+    TRANSACTIONAL_FROM_EMAIL: str = os.getenv(
+        "TRANSACTIONAL_FROM_EMAIL", os.getenv("PASSWORD_RESET_FROM_EMAIL", "")
+    )
+    TRANSACTIONAL_REPLY_TO_EMAIL: str = os.getenv("TRANSACTIONAL_REPLY_TO_EMAIL", "support@homewiseedu.com")
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
@@ -124,7 +128,7 @@ def validate_production_settings(candidate: Settings) -> None:
         raise RuntimeError("Production SECRET_KEY must contain at least 32 characters")
     if candidate.PASSWORD_RESET_DEV_MODE:
         raise RuntimeError("PASSWORD_RESET_DEV_MODE cannot be enabled in production")
-    if not (candidate.RESEND_API_KEY and candidate.PASSWORD_RESET_FROM_EMAIL) and not (
+    if not (candidate.RESEND_API_KEY and candidate.TRANSACTIONAL_FROM_EMAIL) and not (
         candidate.SMTP_HOST and candidate.SMTP_FROM_EMAIL
     ):
         raise RuntimeError("Production password reset email delivery must be configured")

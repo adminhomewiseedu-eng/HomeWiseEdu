@@ -170,7 +170,8 @@ def test_resend_email_uses_https_api_and_precedes_smtp(monkeypatch):
 
     monkeypatch.setattr(settings, "PASSWORD_RESET_DEV_MODE", False)
     monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test_key")
-    monkeypatch.setattr(settings, "PASSWORD_RESET_FROM_EMAIL", "HomeWiseEdu <onboarding@resend.dev>")
+    monkeypatch.setattr(settings, "TRANSACTIONAL_FROM_EMAIL", "HomeWiseEdu <no-reply@homewiseedu.com>")
+    monkeypatch.setattr(settings, "TRANSACTIONAL_REPLY_TO_EMAIL", "support@homewiseedu.com")
     monkeypatch.setattr(password_reset_email.httpx, "post", fake_post)
 
     reset_url = "https://homewiseedu.com/reset-password?token=secret-token"
@@ -178,6 +179,7 @@ def test_resend_email_uses_https_api_and_precedes_smtp(monkeypatch):
     assert captured["url"] == "https://api.resend.com/emails"
     assert captured["headers"]["Authorization"] == "Bearer re_test_key"
     assert captured["json"]["to"] == ["parent@example.com"]
-    assert captured["json"]["from"] == "HomeWiseEdu <onboarding@resend.dev>"
+    assert captured["json"]["from"] == "HomeWiseEdu <no-reply@homewiseedu.com>"
+    assert captured["json"]["reply_to"] == "support@homewiseedu.com"
     assert reset_url in captured["json"]["text"]
     assert "Reset password" in captured["json"]["html"]
