@@ -7,6 +7,13 @@ from ..utils.levels import get_level_label
 from .auth import get_current_user, authorize_child
 
 router = APIRouter(prefix="/api/student", tags=["student"])
+PUBLISHED_STATUSES = {"active", "published"}
+
+
+def _completed_lesson_ids(lessons, completed_pairs):
+    return {lesson.id for lesson in lessons if (published := [
+        day for day in lesson.days if (day.status or "").lower() in PUBLISHED_STATUSES
+    ]) and all((lesson.id, day.day_number) in completed_pairs for day in published)}
 
 @router.get("/dashboard/{child_id}")
 def get_student_dashboard(
@@ -41,7 +48,6 @@ def get_student_dashboard(
     ).all()
     
     completed_pairs = {(r.lesson_id, r.day_number) for r in completed_records}
-    completed_lessons_count = len({r.lesson_id for r in completed_records})
 
     # 3. Dynamic "Today's Lesson": Multi-Day Sequence Resolver
     available_lessons = (
@@ -58,6 +64,8 @@ def get_student_dashboard(
     available_lessons = [lesson for lesson in available_lessons if any(
         (day.status or "").lower() in {"active", "published"} for day in lesson.days
     ) or not lesson.days]
+    completed_lesson_ids = _completed_lesson_ids(available_lessons, completed_pairs)
+    completed_lessons_count = len(completed_lesson_ids)
 
     current_lesson = None
     current_day_number = 1
@@ -143,7 +151,7 @@ def get_student_dashboard(
         total_subj_lessons = len(subj_lessons)
         if total_subj_lessons > 0:
             subj_lesson_ids = {l.id for l in subj_lessons}
-            completed_in_subj = len({r.lesson_id for r in completed_records if r.lesson_id in subj_lesson_ids})
+            completed_in_subj = len(completed_lesson_ids & subj_lesson_ids)
             pct = int((completed_in_subj / total_subj_lessons) * 100)
         else:
             pct = 0

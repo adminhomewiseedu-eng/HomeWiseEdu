@@ -16,6 +16,7 @@ from backend.routers.curriculum import (
     ArchiveLessonRequest, delete_lesson, get_lesson_detail, set_lesson_archive,
 )
 from backend.services.curriculum_importer import import_curriculum_csv_data
+from backend.routers.student import _completed_lesson_ids
 
 
 HEADERS = [
@@ -37,6 +38,22 @@ def curriculum_csv(*, unit="Number Sense", script="Teach counting", status="Publ
             "Learning objectives": "Count five objects", "Key_concept": "One number per object",
             "AI_Teaching_Script": f"{script} day {day}", "Practice Question": "Count five stars",
             "Status": status,
+        })
+    return output.getvalue()
+
+
+def weekly_csv(*, count=1, lesson_type="Weekly Lesson"):
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=HEADERS)
+    writer.writeheader()
+    for number in range(1, count + 1):
+        writer.writerow({
+            "Curriculum Country": "UK", "Subject": "History", "Level": "Level 1",
+            "Unit_Name": "People and Places", "Subtopic": f"History topic {number}",
+            "Lesson Number": str(number), "Lesson Title": f"History lesson {number}",
+            "Lesson Type": lesson_type, "Learning objectives": "Recall one key fact",
+            "Key_concept": "People lived in the past", "AI_Teaching_Script": "Teach one standalone weekly lesson.",
+            "Practice Question": "What happened?", "Status": "Pending",
         })
     return output.getvalue()
 
@@ -177,3 +194,61 @@ def test_importer_is_transactionally_recoverable_on_invalid_later_row(db):
         import_curriculum_csv_data(broken, db)
     db.rollback()
     assert db.query(Lesson).count() == 0
+
+
+def test_weekly_curriculum_creates_one_day_per_lesson_and_reimports_in_place(db):
+    first = import_curriculum_csv_data(weekly_csv(count=36), db); db.commit()
+    lesson_ids = [item.id for item in db.query(Lesson).order_by(Lesson.order_num).all()]
+    day_ids = [item.id for item in db.query(LessonDay).order_by(LessonDay.lesson_id).all()]
+    assert first["total_lessons"] == first["weekly_lessons"] == 36
+    assert first["multi_day_lessons"] == 0
+    assert first["expected_session_count"] == 36
+    assert db.query(LessonDay).count() == 36
+    assert all(day.day_number == 1 and day.activity_type == "Weekly Lesson" for day in db.query(LessonDay).all())
+    second = import_curriculum_csv_data(weekly_csv(count=36), db); db.commit()
+    assert second["matched_lessons"] == 36
+    assert [item.id for item in db.query(Lesson).order_by(Lesson.order_num).all()] == lesson_ids
+    assert [item.id for item in db.query(LessonDay).order_by(LessonDay.lesson_id).all()] == day_ids
+
+
+@pytest.mark.parametrize("bad_type", ["Seminar", "Day 1 Practice", "Day 4 Apply"])
+def test_unknown_or_mismatched_lesson_type_is_rejected(db, bad_type):
+    with pytest.raises(ValueError, match="Lesson"):
+        import_curriculum_csv_data(weekly_csv(lesson_type=bad_type), db)
+
+
+def test_incomplete_duplicate_and_mixed_structures_are_rejected(db):
+    rows = list(csv.DictReader(io.StringIO(curriculum_csv())))
+    for invalid, message in (
+        (rows[:2], "require exactly"),
+        ([rows[0], rows[0], rows[1], rows[2]], "duplicate"),
+        ([dict(rows[0], **{"Lesson Type": "Weekly Lesson"}), rows[1], rows[2]], "cannot mix"),
+    ):
+        output = io.StringIO(); writer = csv.DictWriter(output, fieldnames=HEADERS); writer.writeheader(); writer.writerows(invalid)
+        with pytest.raises(ValueError, match=message):
+            import_curriculum_csv_data(output.getvalue(), db)
+        db.rollback()
+
+
+def test_used_lesson_cadence_conversion_is_blocked_without_detaching_history(db):
+    import_curriculum_csv_data(curriculum_csv(), db); db.commit()
+    lesson = db.query(Lesson).one(); _, _, child = users_and_child(db)
+    db.add(StudentProgress(child_id=child.id, lesson_id=lesson.id, day_number=1, status="completed")); db.commit()
+    weekly = weekly_csv().replace("History", "Mathematics").replace("Level 1", "Level 0").replace("People and Places", "Number Sense").replace("History topic 1", "Counting to 5")
+    with pytest.raises(ValueError, match="student history exists"):
+        import_curriculum_csv_data(weekly, db)
+    db.rollback()
+    assert db.query(LessonDay).filter_by(lesson_id=lesson.id).count() == 3
+    assert db.query(StudentProgress).filter_by(lesson_id=lesson.id).count() == 1
+
+
+def test_completion_respects_actual_published_session_count(db):
+    import_curriculum_csv_data(curriculum_csv(), db)
+    math = db.query(Lesson).one()
+    for day in math.days: day.status = "published"
+    assert _completed_lesson_ids([math], {(math.id, 1)}) == set()
+    assert _completed_lesson_ids([math], {(math.id, 1), (math.id, 2), (math.id, 3)}) == {math.id}
+    db.rollback()
+    import_curriculum_csv_data(weekly_csv(), db)
+    weekly = db.query(Lesson).one(); weekly.days[0].status = "published"
+    assert _completed_lesson_ids([weekly], {(weekly.id, 1)}) == {weekly.id}

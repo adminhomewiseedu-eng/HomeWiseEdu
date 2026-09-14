@@ -51,6 +51,9 @@ async def submit_evidence(
             if lesson.objectives:
                 objectives = lesson.objectives
 
+    lesson_day = db.query(LessonDay).filter(
+        LessonDay.lesson_id == lesson_id, LessonDay.day_number == day_number
+    ).first() if lesson_id else None
     context = {
         "student_name": child.name,
         "level": level_num,
@@ -58,7 +61,7 @@ async def submit_evidence(
         "subject": subject,
         "lesson_topic": lesson_title,
         "day_number": day_number,
-        "activity_type": "Explore" if day_number == 1 else "Practice" if day_number == 2 else "Apply",
+        "activity_type": lesson_day.activity_type if lesson_day else "Explore",
         "learning_objectives": objectives,
         "task_instructions": task_instructions
     }
@@ -179,11 +182,14 @@ async def retry_evidence_evaluation(
     level_label = get_level_label(level_num, child.education_system or "UK")
     objectives = lesson.objectives if lesson and lesson.objectives else [evidence.skill]
     task = lesson.default_evidence_task if lesson and lesson.default_evidence_task else "Demonstrate your understanding and show your step-by-step working."
+    lesson_day = db.query(LessonDay).filter(
+        LessonDay.lesson_id == evidence.lesson_id, LessonDay.day_number == evidence.day_number
+    ).first() if evidence.lesson_id else None
     context = {
         "student_name": child.name, "level": level_num, "level_label": level_label,
         "subject": evidence.subject, "lesson_topic": evidence.lesson_title,
         "day_number": evidence.day_number,
-        "activity_type": "Explore" if evidence.day_number == 1 else "Practice" if evidence.day_number == 2 else "Apply",
+        "activity_type": lesson_day.activity_type if lesson_day else "Explore",
         "learning_objectives": objectives, "task_instructions": task,
     }
     result = await evaluate_student_work(

@@ -18,6 +18,12 @@ router = APIRouter(prefix="/api/curriculum", tags=["curriculum"])
 PUBLISHED_STATUSES = {"active", "published"}
 
 
+def _cadence_metadata(lesson: Lesson):
+    weekly = (len(lesson.days) == 1 and lesson.days[0].day_number == 1
+              and (lesson.days[0].activity_type or "").strip().lower() == "weekly lesson")
+    return ("weekly", 1) if weekly else ("multi_day", 3)
+
+
 class PublishLessonRequest(BaseModel):
     publish: bool = True
 
@@ -115,15 +121,20 @@ async def validate_curriculum_csv(file: UploadFile = File(...), db: Session = De
 def list_admin_lessons(response: Response, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     response.headers["Cache-Control"] = "no-store"
     lessons = db.query(Lesson).order_by(Lesson.level.asc(), Lesson.order_num.asc()).all()
-    return [{
+    result = []
+    for lesson in lessons:
+        cadence, expected_days = _cadence_metadata(lesson)
+        result.append({
         "id": lesson.id, "title": lesson.title, "subtopic": lesson.topic, "lesson_number": lesson.order_num,
         "unit": lesson.unit.title, "subject": lesson.unit.subject.title, "level": lesson.level,
         "curriculum_country": lesson.curriculum_country,
         "archived": lesson.archived, "quiz_review_required": lesson.quiz_review_required,
         "status": "archived" if lesson.archived else ("published" if lesson.days and all((d.status or "").lower() in PUBLISHED_STATUSES for d in lesson.days) else "pending"),
-        "days": len(lesson.days), "lesson_days": [{"id": day.id, "day_number": day.day_number,
+        "days": len(lesson.days), "actual_days": len(lesson.days), "expected_days": expected_days, "cadence": cadence,
+        "lesson_days": [{"id": day.id, "day_number": day.day_number,
             "activity_type": day.activity_type, "status": day.status} for day in lesson.days],
-    } for lesson in lessons]
+        })
+    return result
 
 
 @router.patch("/admin/lessons/{lesson_id}/publication")
@@ -134,8 +145,9 @@ def set_lesson_publication(lesson_id: int, payload: PublishLessonRequest, db: Se
         raise HTTPException(status_code=404, detail="Lesson not found")
     if payload.publish and lesson.archived:
         raise HTTPException(status_code=409, detail="Archived lessons must be restored before publication")
-    if len(lesson.days) != 3:
-        raise HTTPException(status_code=409, detail="A lesson must have exactly three days before publication")
+    cadence, expected_days = _cadence_metadata(lesson)
+    if len(lesson.days) != expected_days:
+        raise HTTPException(status_code=409, detail=f"A {cadence.replace('_', '-')} lesson must have exactly {expected_days} session(s) before publication")
     for day in lesson.days:
         day.status = "published" if payload.publish else "pending"
     db.commit()

@@ -138,20 +138,24 @@ def get_parent_dashboard(
         enrolled_ids = [e.subject_id for e in enrollments]
 
         # Total lessons in enrolled subjects at child's level
-        total_enrolled_lessons = (
+        enrolled_lessons = (
             db.query(Lesson)
             .join(Unit, Lesson.unit_id == Unit.id)
             .filter(Lesson.level == lvl, Lesson.archived.is_(False), Unit.subject_id.in_(enrolled_ids))
-            .count()
+            .all()
         )
-        if total_enrolled_lessons == 0:
-            total_enrolled_lessons = max(1, db.query(Lesson).filter(Lesson.level == lvl, Lesson.archived.is_(False)).count())
-
-        completed = db.query(StudentProgress).filter(
+        enrolled_lessons = [lesson for lesson in enrolled_lessons if any(
+            (day.status or "").lower() in {"active", "published"} for day in lesson.days
+        )]
+        completed_rows = db.query(StudentProgress).filter(
             StudentProgress.child_id == c.id, StudentProgress.status == "completed"
-        ).count()
-
-        progress_pct = min(100, int((completed / total_enrolled_lessons) * 100)) if total_enrolled_lessons > 0 else 0
+        ).all()
+        completed_pairs = {(row.lesson_id, row.day_number) for row in completed_rows}
+        completed = sum(1 for lesson in enrolled_lessons if (published := [
+            day for day in lesson.days if (day.status or "").lower() in {"active", "published"}
+        ]) and all((lesson.id, day.day_number) in completed_pairs for day in published))
+        total_enrolled_lessons = len(enrolled_lessons)
+        progress_pct = min(100, int((completed / total_enrolled_lessons) * 100)) if total_enrolled_lessons else 0
         has_high_alert = db.query(ParentAlert).filter(
             ParentAlert.child_id == c.id, ParentAlert.severity == "high"
         ).count() > 0

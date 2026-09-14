@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session
 
-from ..models import Lesson, LessonDay, Subject, Unit
+from ..models import (AIInteraction, LearningEvidence, Lesson, LessonDay, LessonSession,
+                      QuizAttempt, StudentProgress, Subject, Unit)
 
 REQUIRED_COLUMNS = {"subject", "level", "unitname", "subtopic", "lessonnumber", "lessontitle",
                     "lessontype", "learningobjectives", "keyconcept", "aiteachingscript", "status"}
@@ -70,19 +71,37 @@ def _same_content(left: Any, right: Any) -> bool:
     )
 
 
-def _activity(lesson_type: str, day_number: int) -> str:
-    lowered = lesson_type.lower()
-    if "explore" in lowered:
-        return "Explore"
-    if "practice" in lowered:
-        return "Practice"
-    if "apply" in lowered or "application" in lowered:
-        return "Apply"
-    return {1: "Explore", 2: "Practice", 3: "Apply"}[day_number]
+def _parse_lesson_type(value: str) -> tuple[str, int, str]:
+    normalized = re.sub(r"\s+", " ", (value or "").strip().lower().replace("–", "-").replace("—", "-"))
+    if normalized == "weekly lesson":
+        return "weekly", 1, "Weekly Lesson"
+    match = re.fullmatch(r"day\s*([123])\s*(?:-|:)?\s*(explore|practice|apply)", normalized)
+    if not match:
+        raise ValueError("Lesson Type must be Day 1 Explore, Day 2 Practice, Day 3 Apply, or Weekly Lesson")
+    day_number, activity = int(match.group(1)), match.group(2).title()
+    expected = {1: "Explore", 2: "Practice", 3: "Apply"}[day_number]
+    if activity != expected:
+        raise ValueError(f"Day {day_number} must use activity {expected}")
+    return "multi_day", day_number, activity
+
+
+def _existing_cadence(lesson: Lesson) -> str | None:
+    days = sorted(lesson.days, key=lambda item: item.day_number)
+    if len(days) == 1 and days[0].day_number == 1 and (days[0].activity_type or "").strip().lower() == "weekly lesson":
+        return "weekly"
+    if len(days) == 3 and [(day.day_number, day.activity_type) for day in days] == [(1, "Explore"), (2, "Practice"), (3, "Apply")]:
+        return "multi_day"
+    return None
+
+
+def _has_student_history(db: Session, lesson_id: int) -> bool:
+    return any(db.query(model).filter(model.lesson_id == lesson_id).first() for model in (
+        StudentProgress, LessonSession, LearningEvidence, AIInteraction, QuizAttempt
+    ))
 
 
 def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, Any]:
-    """Import the three-day blueprint without allowing silent hierarchy defaults."""
+    """Import validated multi-day or standalone weekly curriculum blueprints."""
     reader = csv.DictReader(io.StringIO(csv_text_or_file.strip()))
     normalized_headers = {_key(header) for header in (reader.fieldnames or [])}
     missing = sorted(REQUIRED_COLUMNS - normalized_headers)
@@ -97,12 +116,11 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
              "lessons_created": 0, "lessons_updated": 0, "days_created": 0,
              "days_updated": 0, "days_processed": 0, "pending_days": 0,
              "skipped_duplicates": 0, "validation_failures": 0,
-             "quiz_reviews_flagged": 0, "hierarchy_identity_changes": []}
-    seen_days = set()
-    touched_lessons = set()
-    flagged_lessons = set()
-    new_lesson_ids = set()
-    reported_identity_changes = set()
+             "quiz_reviews_flagged": 0, "hierarchy_identity_changes": [],
+             "total_lessons": 0, "multi_day_lessons": 0, "weekly_lessons": 0,
+             "expected_session_count": 0, "new_lessons": 0, "matched_lessons": 0,
+             "cadence_conflicts": []}
+    prepared_rows, grouped_rows = [], {}
     legacy_lesson_numbers = {}
     for row_number, raw in enumerate(raw_rows, start=2):
         row = {_key(k): (v or "").strip() for k, v in raw.items() if k}
@@ -110,11 +128,49 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
             legacy_key = (_key(row["subject"]), parse_int_safe(row["level"], -1), _key(row["unit"]), _key(row["lessontopic"]))
             if legacy_key not in legacy_lesson_numbers:
                 legacy_lesson_numbers[legacy_key] = len({key for key in legacy_lesson_numbers if key[:3] == legacy_key[:3]}) + 1
-            row["unitname"] = row["unit"]
-            row["subtopic"] = row["lessontopic"]
-            row["lessonnumber"] = str(legacy_lesson_numbers[legacy_key])
-            row["lessontitle"] = row["lessontopic"]
-            row["lessontype"] = f"Day {row['day']} - {row['activitytype']}"
+            row.update({"unitname": row["unit"], "subtopic": row["lessontopic"],
+                        "lessonnumber": str(legacy_lesson_numbers[legacy_key]), "lessontitle": row["lessontopic"],
+                        "lessontype": f"Day {row['day']} {row['activitytype']}"})
+        for label, key in (("Subject", "subject"), ("Unit_Name", "unitname"), ("Subtopic", "subtopic"),
+                           ("Lesson Title", "lessontitle"), ("Lesson Number", "lessonnumber"), ("Lesson Type", "lessontype")):
+            if not row.get(key):
+                raise ValueError(f"Row {row_number}: {label} is required")
+        level_num, lesson_number = parse_int_safe(row.get("level"), -1), parse_int_safe(row["lessonnumber"], -1)
+        if not 0 <= level_num <= 13:
+            raise ValueError(f"Row {row_number}: Level must be between 0 and 13")
+        if lesson_number < 1:
+            raise ValueError(f"Row {row_number}: Lesson Number must contain a positive number")
+        try:
+            cadence, day_number, activity = _parse_lesson_type(row["lessontype"])
+        except ValueError as exc:
+            raise ValueError(f"Row {row_number}, Lesson {lesson_number} ({row['lessontitle']}): {exc}") from exc
+        row.update({"_row_number": row_number, "_level": level_num, "_lesson_number": lesson_number,
+                    "_cadence": cadence, "_day_number": day_number, "_activity": activity})
+        key = (_key(row["subject"]), level_num, _key(row["unitname"]), lesson_number)
+        grouped_rows.setdefault(key, []).append(row)
+        prepared_rows.append(row)
+    for rows in grouped_rows.values():
+        label = f"Lesson {rows[0]['_lesson_number']} ({rows[0]['lessontitle']})"
+        cadences, day_numbers = {row["_cadence"] for row in rows}, [row["_day_number"] for row in rows]
+        if len(cadences) != 1:
+            raise ValueError(f"{label}: cannot mix Weekly Lesson and multi-day rows")
+        cadence = next(iter(cadences))
+        if len(day_numbers) != len(set(day_numbers)):
+            raise ValueError(f"{label}: duplicate {'Weekly Lesson rows' if cadence == 'weekly' else 'day numbers'} are not allowed")
+        if cadence == "weekly" and len(rows) != 1:
+            raise ValueError(f"{label}: Weekly Lesson must contain exactly one row")
+        if cadence == "multi_day" and (len(rows) != 3 or set(day_numbers) != {1, 2, 3}):
+            raise ValueError(f"{label}: multi-day lessons require exactly Day 1 Explore, Day 2 Practice, and Day 3 Apply")
+        stats[f"{cadence}_lessons"] += 1
+        stats["expected_session_count"] += 1 if cadence == "weekly" else 3
+    stats["total_lessons"] = len(grouped_rows)
+
+    touched_lessons = set()
+    flagged_lessons = set()
+    new_lesson_ids = set()
+    reported_identity_changes = set()
+    for row in prepared_rows:
+        row_number = row["_row_number"]
         subject_name, unit_title = row["subject"], row["unitname"]
         subtopic, lesson_title = row["subtopic"], row["lessontitle"]
         lesson_number_raw, lesson_type = row["lessonnumber"], row["lessontype"]
@@ -122,18 +178,8 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
                              ("Lesson Title", lesson_title), ("Lesson Number", lesson_number_raw), ("Lesson Type", lesson_type)):
             if not value:
                 raise ValueError(f"Row {row_number}: {label} is required")
-        level_num, lesson_number = parse_int_safe(row["level"], -1), parse_int_safe(lesson_number_raw, -1)
-        day_number = parse_int_safe(lesson_type, -1)
-        if not 0 <= level_num <= 13:
-            raise ValueError(f"Row {row_number}: Level must be between 0 and 13")
-        if lesson_number < 1:
-            raise ValueError(f"Row {row_number}: Lesson Number must contain a positive number")
-        if day_number not in {1, 2, 3}:
-            raise ValueError(f"Row {row_number}: Lesson Type must identify Day 1, Day 2, or Day 3")
-        unique_day = (_key(subject_name), level_num, _key(unit_title), lesson_number, day_number)
-        if unique_day in seen_days:
-            raise ValueError(f"Row {row_number}: duplicate lesson/day in this upload")
-        seen_days.add(unique_day)
+        level_num, lesson_number = row["_level"], row["_lesson_number"]
+        day_number, cadence, activity = row["_day_number"], row["_cadence"], row["_activity"]
 
         subject = db.query(Subject).filter(Subject.slug == slugify(subject_name)).first()
         if not subject:
@@ -168,8 +214,17 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
                             curriculum_country=row.get("curriculumcountry") or None, objectives=objectives,
                             learn_content=key_concept or row.get("aiteachingscript"), examples=[], vocabulary=[],
                             key_points=objectives, default_evidence_task=f"Demonstrate your understanding of {subtopic}.")
-            db.add(lesson); db.flush(); stats["lessons_created"] += 1; new_lesson_ids.add(lesson.id)
+            db.add(lesson); db.flush(); stats["lessons_created"] += 1; stats["new_lessons"] += 1; new_lesson_ids.add(lesson.id)
         else:
+            if lesson.id not in touched_lessons:
+                stats["matched_lessons"] += 1
+                existing_cadence = _existing_cadence(lesson)
+                if existing_cadence and existing_cadence != cadence:
+                    conflict = {"lesson_id": lesson.id, "lesson_number": lesson_number, "title": lesson.title,
+                                "existing": existing_cadence, "uploaded": cadence}
+                    stats["cadence_conflicts"].append(conflict)
+                    suffix = " because student history exists" if _has_student_history(db, lesson.id) else " automatically"
+                    raise ValueError(f"Lesson {lesson_number} ({lesson.title}): cadence cannot change from {existing_cadence} to {cadence}{suffix}")
             lesson_changed = any((
                 not _same_content(lesson.topic, subtopic),
                 not _same_content(lesson.objectives or [], objectives or lesson.objectives or []),
@@ -200,7 +255,7 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
             lesson.quiz_review_required = True
             flagged_lessons.add(lesson.id)
         previous_status = day.status if not created else None
-        day.activity_type = _activity(lesson_type, day_number)
+        day.activity_type = activity
         day.title = lesson_title if not legacy_format else f"{lesson_title} — Day {day_number} ({day.activity_type})"
         day.learning_objectives, day.key_concept = objectives, key_concept
         day.bible_reference, day.biblical_theme = row.get("biblereference"), row.get("biblicaltheme")

@@ -20,3 +20,10 @@ test('curriculum UI distinguishes archived and quiz-review-required lessons', ()
   assert.match(screen, /Quiz review required/);
   assert.match(screen, /Review the approved quiz for alignment/);
 });
+
+test('curriculum UI displays cadence-aware session counts', () => {
+  assert.match(screen, /lesson\.expected_days/);
+  assert.match(screen, /Weekly Lesson/);
+  assert.match(screen, /Multi-day/);
+  assert.doesNotMatch(screen, /lesson\.days\}\/3/);
+});

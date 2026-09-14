@@ -894,11 +894,14 @@ def _update_quiz_progress(db: Session, sub: QuizSubmission, child: Child, percen
     ).first()
 
     if not progress:
+        lesson_day = db.query(LessonDay).filter(
+            LessonDay.lesson_id == sub.lesson_id, LessonDay.day_number == sub.day_number
+        ).first()
         progress = StudentProgress(
             child_id=sub.child_id,
             lesson_id=sub.lesson_id,
             day_number=sub.day_number,
-            activity_type="Practice",
+            activity_type=lesson_day.activity_type if lesson_day else "Practice",
             status="completed" if percentage >= 60 else "in_progress",
             quiz_score=percentage,
             mastery_status="mastered" if percentage >= 80 else ("competent" if percentage >= 60 else "developing"),

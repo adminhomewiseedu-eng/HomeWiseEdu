@@ -167,15 +167,15 @@ def test_quiz_and_evidence_immediate_progress_sync():
     assert quiz_post.json()["score"] == 3
     assert quiz_post.json()["percentage"] == 100
 
-    # Check student dashboard immediately (progress should now be 50% for 1 of 2 lessons completed)
+    # Day 1 completes one session, not the whole three-day lesson.
     dash_after = client.get(f"/api/student/dashboard/{child_id}", headers=headers).json()
     math_after = next(s for s in dash_after["progress_by_subject"] if s["subject"] == "Mathematics")
-    assert math_after["percentage"] == 50
+    assert math_after["percentage"] == 0
 
     # Check parent dashboard immediately
     p_dash_after = client.get(f"/api/parent/dashboard/{parent_id}", headers=headers).json()
     c_entry = next(c for c in p_dash_after["children"] if c["id"] == child_id)
-    assert c_entry["progress_percentage"] > 0
+    assert c_entry["progress_percentage"] == 0
 
 
 def test_quiz_attempt_snapshot_idempotency_and_real_retake():
