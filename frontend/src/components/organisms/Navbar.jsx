@@ -32,7 +32,7 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
 
         <div className="appbar-right">
           {(normalized === 'student' || normalized === 'portfolio') && userRole === 'parent' && (
-            <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('/parent')} style={{ fontWeight: 600 }}>
+            <button className="btn btn-ghost btn-sm parent-dashboard-link" onClick={() => onNavigate('/parent')} style={{ fontWeight: 600 }}>
               ← Parent Dashboard
             </button>
           )}

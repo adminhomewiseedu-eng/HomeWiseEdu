@@ -8,7 +8,7 @@ export default function PortfolioScreen({ child, onBack }) {
 
   return (
     <div className="wrap">
-      <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
+      <div className="page-head portfolio-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
         <div>
           <button className="btn btn-ghost btn-sm" style={{ padding: '4px 0', marginBottom: 4 }} onClick={onBack}>
             ← Back to dashboard
@@ -16,7 +16,7 @@ export default function PortfolioScreen({ child, onBack }) {
           <h1>{studentName}'s Portfolio</h1>
           <p>A verified record of real learning and completed evidence tasks.</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="portfolio-actions" style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost btn-sm" style={{ border: '2px solid var(--line)' }} onClick={() => alert('Portfolio link copied to clipboard!')}>
             🔗 Share link
           </button>

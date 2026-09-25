@@ -61,7 +61,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
           </button>
         </div>
       )}
-      <div style={{ background: 'linear-gradient(135deg,var(--teal),var(--sky))', borderRadius: 26, padding: 30, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 22px 0', position: 'relative', overflow: 'hidden' }}>
+      <div className="student-welcome" style={{ background: 'linear-gradient(135deg,var(--teal),var(--sky))', borderRadius: 26, padding: 30, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 22px 0', position: 'relative', overflow: 'hidden' }}>
         <div className="hero-blob" style={{ width: 180, height: 180, background: '#fff', opacity: 0.15, top: -50, right: 40 }} />
         <div style={{ position: 'relative', zIndex: 2 }}>
           <h2 style={{ fontSize: 30 }}>Welcome, {name}! 🌟</h2>
@@ -69,7 +69,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
             {completed_lessons_count > 0 ? `${completed_lessons_count} lesson${completed_lessons_count > 1 ? 's' : ''} completed so far!` : "Today's learning path is ready."}
           </p>
         </div>
-        <div style={{ position: 'relative', zIndex: 2, background: 'rgba(255,255,255,.2)', borderRadius: 18, padding: '14px 22px', textAlign: 'center' }}>
+        <div className="student-xp" style={{ position: 'relative', zIndex: 2, background: 'rgba(255,255,255,.2)', borderRadius: 18, padding: '14px 22px', textAlign: 'center' }}>
           <div style={{ fontFamily: 'Baloo 2', fontWeight: 800, fontSize: 32 }}>{xp}</div>
           <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.9 }}>⭐ XP POINTS</div>
         </div>
@@ -80,7 +80,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
           <div className="card-head"><h3>📅 Today's Lesson</h3></div>
           {today_lesson ? (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--cream)', borderRadius: 16, padding: 18 }}>
+              <div className="today-lesson-row" style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'var(--cream)', borderRadius: 16, padding: 18 }}>
                 <div style={{ width: 56, height: 56, borderRadius: 16, background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>
                   {today_lesson.icon || '📐'}
                 </div>
@@ -207,7 +207,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,var(--sun),var(--coral))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19, flexShrink: 0 }}>🤖</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.5 }}>"{ai_feedback_snippet}"</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="student-quiz-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: 'var(--plum)' }}>
               📋 Daily Quiz <span className="pill" style={{ background: '#F0FDF4', color: '#16A34A' }}>{today_lesson?.practice_ready ? 'Ready!' : 'Locked'}</span>
             </div>
@@ -219,7 +219,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
 
         <div className="card pad">
           <div className="card-head"><h3>🏆 Rewards</h3></div>
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+          <div className="student-rewards" style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
             <div style={{ flex: 1, background: '#FEF3C7', borderRadius: 14, padding: 14, textAlign: 'center' }}>
               <div style={{ fontSize: 26 }}>⭐</div>
               <div style={{ fontFamily: 'Baloo 2', fontWeight: 800, color: 'var(--plum)' }}>{xp} XP</div>
@@ -233,7 +233,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
               <div style={{ fontFamily: 'Baloo 2', fontWeight: 800, color: 'var(--plum)' }}>{badges_count} badges</div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="student-reward-actions" style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-teal btn-sm" style={{ flex: 1 }} onClick={onViewPortfolio}>📁 Portfolio</button>
             <button className="btn btn-ghost btn-sm" style={{ flex: 1, border: '2px solid var(--line)' }} onClick={onViewPortfolio}>🎓 Certificates</button>
           </div>
