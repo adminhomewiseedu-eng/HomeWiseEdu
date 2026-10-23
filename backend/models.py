@@ -11,6 +11,7 @@ class User(Base):
     name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(String, default="parent") # parent, student, admin
+    programme = Column(String, default="homeschool", server_default="homeschool", nullable=False)
     account_status = Column(String, default="active", nullable=False) # active, suspended
     avatar = Column(String, default="S")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -24,6 +25,10 @@ class User(Base):
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     parent_profile = relationship("ParentProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     admin_profile = relationship("AdminProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint("programme IN ('homeschool', 'bible_study')", name="ck_users_programme"),
+    )
 
 
 class ParentProfile(Base):

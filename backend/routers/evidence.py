@@ -10,7 +10,14 @@ from ..services.openai_service import evaluate_student_work
 from ..services.storage_service import save_evidence_upload
 from ..config import settings
 from ..utils.levels import get_level_label
-from .auth import get_current_user, authorize_child
+from .auth import (
+    BIBLE_STUDY_PROGRAMME,
+    BIBLE_SUBJECT_SLUG,
+    authorize_child,
+    authorize_child_lesson,
+    effective_child_programme,
+    get_current_user,
+)
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 
@@ -29,7 +36,27 @@ async def submit_evidence(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    child = authorize_child(db, current_user, child_id)
+    lesson = None
+    if lesson_id:
+        child, lesson = authorize_child_lesson(db, current_user, child_id, lesson_id)
+    else:
+        child = authorize_child(db, current_user, child_id)
+
+    if effective_child_programme(child) == BIBLE_STUDY_PROGRAMME:
+        if not lesson:
+            raise HTTPException(
+                status_code=403,
+                detail="Bible Study evidence must be linked to an Understanding The Word lesson",
+            )
+        lesson_subject = lesson.unit.subject if lesson.unit else None
+        if not lesson_subject or lesson_subject.slug != BIBLE_SUBJECT_SLUG:
+            raise HTTPException(
+                status_code=403,
+                detail="Bible Study evidence is limited to Understanding The Word",
+            )
+        # Evidence classification is authoritative lesson metadata, not client input.
+        subject = lesson_subject.title
+        lesson_title = lesson.title
 
     saved_file_url = None
     file_name = None
@@ -43,13 +70,11 @@ async def submit_evidence(
     level_label = get_level_label(level_num, edu_sys)
     objectives = [skill]
 
-    if lesson_id:
-        lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
-        if lesson:
-            if lesson.default_evidence_task:
-                task_instructions = lesson.default_evidence_task
-            if lesson.objectives:
-                objectives = lesson.objectives
+    if lesson:
+        if lesson.default_evidence_task:
+            task_instructions = lesson.default_evidence_task
+        if lesson.objectives:
+            objectives = lesson.objectives
 
     lesson_day = db.query(LessonDay).filter(
         LessonDay.lesson_id == lesson_id, LessonDay.day_number == day_number
@@ -154,7 +179,10 @@ def download_evidence_file(
     evidence = db.query(LearningEvidence).filter(LearningEvidence.id == evidence_id).first()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
-    authorize_child(db, current_user, evidence.child_id)
+    if evidence.lesson_id:
+        authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id)
+    else:
+        authorize_child(db, current_user, evidence.child_id)
     stored_name = getattr(evidence, "stored_file_name", None)
     if not stored_name:
         raise HTTPException(status_code=404, detail="Evidence file is not available")
@@ -174,10 +202,12 @@ async def retry_evidence_evaluation(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
     child = authorize_child(db, current_user, evidence.child_id)
+    lesson = None
+    if evidence.lesson_id:
+        child, lesson = authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id)
     if evidence.verified and evidence.score is not None:
         return evidence
 
-    lesson = db.query(Lesson).filter(Lesson.id == evidence.lesson_id).first() if evidence.lesson_id else None
     level_num = child.level if child.level is not None else 0
     level_label = get_level_label(level_num, child.education_system or "UK")
     objectives = lesson.objectives if lesson and lesson.objectives else [evidence.skill]
@@ -232,4 +262,20 @@ def get_portfolio(
     current_user: User = Depends(get_current_user)
 ):
     authorize_child(db, current_user, child_id)
-    return db.query(LearningEvidence).filter(LearningEvidence.child_id == child_id).order_by(LearningEvidence.created_at.desc()).all()
+    evidence_items = db.query(LearningEvidence).filter(
+        LearningEvidence.child_id == child_id
+    ).order_by(LearningEvidence.created_at.desc()).all()
+    if current_user.role == "admin":
+        return evidence_items
+    authorized_items = []
+    for evidence in evidence_items:
+        if not evidence.lesson_id:
+            authorized_items.append(evidence)
+            continue
+        try:
+            authorize_child_lesson(db, current_user, child_id, evidence.lesson_id)
+            authorized_items.append(evidence)
+        except HTTPException as exc:
+            if exc.status_code not in {403, 404}:
+                raise
+    return authorized_items

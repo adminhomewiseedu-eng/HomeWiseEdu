@@ -10,7 +10,8 @@ from ..schemas import RecommendationAction, ChildUpdate, StudentCredentialsUpdat
 from ..config import settings
 from ..services.storage_service import save_profile_image, delete_profile_image
 from ..utils.levels import get_level_label
-from .auth import get_current_user, authorize_child, get_password_hash
+from .auth import (get_current_user, authorize_child, get_password_hash,
+                   BIBLE_STUDY_PROGRAMME, BIBLE_SUBJECT_SLUG, HOMESCHOOL_PROGRAMME)
 from typing import Optional
 
 router = APIRouter(prefix="/api/parent", tags=["parent"])
@@ -124,6 +125,18 @@ def get_parent_dashboard(
     parent = db.query(User).filter(User.id == target_id).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Parent not found")
+    parent_programme = parent.programme or HOMESCHOOL_PROGRAMME
+    bible_subject = None
+    bible_lesson_ids = []
+    if parent_programme == BIBLE_STUDY_PROGRAMME:
+        bible_subject = db.query(Subject).filter(Subject.slug == BIBLE_SUBJECT_SLUG).first()
+        if bible_subject:
+            bible_lesson_ids = [row[0] for row in (
+                db.query(Lesson.id)
+                .join(Unit, Lesson.unit_id == Unit.id)
+                .filter(Unit.subject_id == bible_subject.id)
+                .all()
+            )]
 
     children = db.query(Child).filter(Child.parent_id == target_id).all()
     children_data = []
@@ -136,6 +149,8 @@ def get_parent_dashboard(
         # Enrolled subjects
         enrollments = db.query(ChildSubject).filter(ChildSubject.child_id == c.id).all()
         enrolled_ids = [e.subject_id for e in enrollments]
+        if parent_programme == BIBLE_STUDY_PROGRAMME:
+            enrolled_ids = [bible_subject.id] if bible_subject and bible_subject.id in enrolled_ids else []
 
         # Total lessons in enrolled subjects at child's level
         enrolled_lessons = (
@@ -147,9 +162,12 @@ def get_parent_dashboard(
         enrolled_lessons = [lesson for lesson in enrolled_lessons if any(
             (day.status or "").lower() in {"active", "published"} for day in lesson.days
         )]
-        completed_rows = db.query(StudentProgress).filter(
+        completed_query = db.query(StudentProgress).filter(
             StudentProgress.child_id == c.id, StudentProgress.status == "completed"
-        ).all()
+        )
+        if parent_programme == BIBLE_STUDY_PROGRAMME:
+            completed_query = completed_query.filter(StudentProgress.lesson_id.in_(bible_lesson_ids))
+        completed_rows = completed_query.all()
         completed_pairs = {(row.lesson_id, row.day_number) for row in completed_rows}
         completed = sum(1 for lesson in enrolled_lessons if (published := [
             day for day in lesson.days if (day.status or "").lower() in {"active", "published"}
@@ -183,9 +201,13 @@ def get_parent_dashboard(
     recommendations = db.query(AIRecommendation).filter(AIRecommendation.parent_id == target_id).order_by(AIRecommendation.created_at.desc()).all()
     
     child_ids = [c.id for c in children]
-    recent_evidence = db.query(LearningEvidence).filter(
-        LearningEvidence.child_id.in_(child_ids)
-    ).order_by(LearningEvidence.created_at.desc()).limit(6).all() if child_ids else []
+    if child_ids:
+        evidence_query = db.query(LearningEvidence).filter(LearningEvidence.child_id.in_(child_ids))
+        if parent_programme == BIBLE_STUDY_PROGRAMME:
+            evidence_query = evidence_query.filter(LearningEvidence.lesson_id.in_(bible_lesson_ids))
+        recent_evidence = evidence_query.order_by(LearningEvidence.created_at.desc()).limit(6).all()
+    else:
+        recent_evidence = []
 
     return {
         "parent_name": parent.name.split()[0] if parent.name else "Parent",
@@ -220,7 +242,12 @@ def update_child(
     if child.login_user:
         child.login_user.name = child.name
         child.login_user.avatar = child.avatar
+        child.login_user.programme = child.parent.programme or HOMESCHOOL_PROGRAMME
     if subject_ids is not None:
+        if (child.parent.programme or HOMESCHOOL_PROGRAMME) == BIBLE_STUDY_PROGRAMME:
+            bible_subject = db.query(Subject).filter(Subject.slug == BIBLE_SUBJECT_SLUG).first()
+            if not bible_subject or set(subject_ids) != {bible_subject.id}:
+                raise HTTPException(status_code=403, detail="Bible Study accounts may only enroll in Understanding The Word")
         valid = db.query(Subject).filter(Subject.id.in_(subject_ids)).all() if subject_ids else []
         if len(valid) != len(set(subject_ids)):
             raise HTTPException(status_code=400, detail="One or more selected subjects are invalid")
@@ -253,11 +280,13 @@ def update_student_credentials(
         raise HTTPException(status_code=400, detail="Student email is already registered")
     if not account:
         account = User(email=email, name=child.name, role="student", avatar=child.avatar,
+                       programme=(child.parent.programme or HOMESCHOOL_PROGRAMME),
                        password_hash=get_password_hash(password))
         db.add(account)
         db.flush()
         child.user_id = account.id
     else:
+        account.programme = child.parent.programme or HOMESCHOOL_PROGRAMME
         if email and email != account.email:
             account.email = email
         if password:

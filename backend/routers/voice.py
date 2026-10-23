@@ -12,7 +12,7 @@ from ..database import get_db
 from ..services.openai_service import generate_openai_speech_audio
 from ..services.elevenlabs_service import generate_speech_audio
 from ..models import User, Lesson, LessonSession
-from .auth import get_current_user, authorize_child
+from .auth import get_current_user, authorize_child_lesson
 from ..utils.lesson_content import authored_worked_examples
 
 logger = logging.getLogger(__name__)
@@ -105,14 +105,11 @@ async def create_realtime_session(
     current_user: User = Depends(get_current_user),
 ):
     """Mint a short-lived browser credential; the permanent key never leaves the server."""
-    child = authorize_child(db, current_user, req.child_id)
+    child, lesson = authorize_child_lesson(db, current_user, req.child_id, req.lesson_id)
     response.headers["Cache-Control"] = "no-store"
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="Realtime classroom is not configured")
 
-    lesson = db.query(Lesson).filter(Lesson.id == req.lesson_id).first()
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
     if lesson.archived and current_user.role != "admin":
         raise HTTPException(status_code=404, detail="Lesson not found")
     active_day = next((day for day in lesson.days if day.day_number == req.day_number), None)

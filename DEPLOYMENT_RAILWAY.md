@@ -5,7 +5,7 @@ This is a deployment runbook, not an authorization to deploy. The immediate MVP 
 ## Services
 
 1. **PostgreSQL** — Railway managed PostgreSQL. Private networking only. Backups and retention must be enabled in Railway.
-2. **Backend** — repository root `.`; Nixpacks build command `pip install -r backend/requirements.txt`; pre-deploy command `alembic upgrade head`; start command `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`; health check `/ready`. Public HTTPS is required for the frontend API and protected file URLs; use the PostgreSQL private URL.
+2. **Backend** — repository root `.`; Nixpacks build command `pip install -r backend/requirements.txt`; no pre-deploy command; start command `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`; health check `/ready`. Public HTTPS is required for the frontend API and protected file URLs; use the PostgreSQL private URL.
 3. **Frontend** — root `frontend`; Nixpacks build (`npm ci && npm run build`); start `node server.mjs`; health check `/`. The built-in server provides SPA fallback for `/parent`, `/student`, `/lesson/*`, and `/quiz/*`.
 4. **Volume** — attach to the backend at `/data/homewiseedu`; set `STORAGE_ROOT=/data/homewiseedu`. Do not attach it to the frontend.
 
@@ -45,7 +45,7 @@ Never enable `PASSWORD_RESET_DEV_MODE` in production; startup rejects it. Produc
 
 ## Migration and data preparation
 
-For a clean database, `alembic upgrade head` creates the current schema. The Railway backend pre-deploy command executes it once before replicas start. Application startup only verifies readiness; it never mutates production schema.
+For a clean database, `alembic upgrade head` creates the current schema. It must be run only as a separately approved, explicit operator action after a restorable backup has been verified. Railway pre-deploy and application startup must not execute migrations. Application startup only verifies readiness; it never mutates production schema.
 
 For a legacy pre-Alembic database:
 
@@ -76,8 +76,8 @@ Uploads are capped, extension/MIME/content-signature checked, assigned generated
 
 1. Provision PostgreSQL and take note of its private `DATABASE_URL`.
 2. Create the backend service, attach `/data/homewiseedu`, and configure all backend variables.
-3. Run/observe the pre-deploy migration; stop if duplicate or schema checks fail.
-4. Deploy backend and verify `/health` then `/ready` over HTTPS.
+3. After separate approval, run the migration explicitly against the intended database and verify the resulting Alembic revision; stop if any schema check fails.
+4. Confirm the Railway pre-deploy command is empty, then deploy backend and verify `/health` then `/ready` over HTTPS.
 5. Create frontend service, set `VITE_API_URL` to the backend HTTPS origin, and deploy.
 6. Obtain the frontend HTTPS domain; update backend `ALLOWED_ORIGINS` and redeploy backend configuration.
 7. Smoke-test parent/student login, a nested-route refresh, lesson resume, voice fallback, quiz completion, upload retrieval, report ownership, and pending evidence retry.

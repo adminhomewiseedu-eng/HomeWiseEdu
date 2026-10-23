@@ -10,7 +10,7 @@ import threading
 import time
 from urllib.parse import urlencode
 from ..database import get_db
-from ..models import User, Child, ChildSubject, Subject, PasswordResetToken
+from ..models import User, Child, ChildSubject, Subject, Lesson, PasswordResetToken
 from ..schemas import (
     UserRegister, UserLogin, TokenResponse, ChildCreate, ChildOut,
     ForgotPasswordRequest, ResetPasswordRequest,
@@ -20,6 +20,9 @@ from ..services.password_reset_email import email_delivery_configured, send_pass
 from ..utils.levels import get_level_label
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+BIBLE_STUDY_PROGRAMME = "bible_study"
+HOMESCHOOL_PROGRAMME = "homeschool"
+BIBLE_SUBJECT_SLUG = "understanding-the-word"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 PUBLIC_RESET_RESPONSE = "If an account exists for that email, we'll send password reset instructions."
 RESET_UNAVAILABLE_RESPONSE = "Password reset email delivery is currently unavailable. Please contact support@homewiseedu.com."
@@ -87,6 +90,68 @@ def authorize_child(db: Session, current_user: User, child_id: int) -> Child:
         raise HTTPException(status_code=403, detail="Not authorized for this child")
     return child
 
+
+def effective_child_programme(child: Child) -> str:
+    """Derive a child's entitlement from its parent account, never from client/JWT claims."""
+    return (child.parent.programme if child.parent else None) or HOMESCHOOL_PROGRAMME
+
+
+def authorize_child_lesson(
+    db: Session,
+    current_user: User,
+    child_id: int,
+    lesson_id: int,
+) -> tuple[Child, Lesson]:
+    """Authorize ownership, enrollment, and programme access to a lesson."""
+    child = authorize_child(db, current_user, child_id)
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    if current_user.role == "admin":
+        return child, lesson
+    subject = lesson.unit.subject if lesson.unit else None
+    if not subject:
+        raise HTTPException(status_code=403, detail="Lesson is not available for this student")
+    enrollment = db.query(ChildSubject).filter(
+        ChildSubject.child_id == child.id,
+        ChildSubject.subject_id == subject.id,
+    ).first()
+    if not enrollment:
+        raise HTTPException(status_code=403, detail="Student is not enrolled in this lesson subject")
+    if effective_child_programme(child) == BIBLE_STUDY_PROGRAMME and subject.slug != BIBLE_SUBJECT_SLUG:
+        raise HTTPException(status_code=403, detail="This lesson is not included in the Bible Study programme")
+    return child, lesson
+
+
+def authorize_lesson_for_user(db: Session, current_user: User, lesson_id: int) -> Lesson:
+    """Authorize lesson metadata where the legacy endpoint has no child-id parameter."""
+    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    if current_user.role == "admin":
+        return lesson
+    subject = lesson.unit.subject if lesson.unit else None
+    if not subject:
+        raise HTTPException(status_code=403, detail="Lesson is not available")
+    if current_user.role == "student":
+        child = db.query(Child).filter(Child.user_id == current_user.id).first()
+        if not child:
+            raise HTTPException(status_code=403, detail="Student profile is not available")
+        authorize_child_lesson(db, current_user, child.id, lesson.id)
+        return lesson
+    if current_user.role == "parent":
+        programme = current_user.programme or HOMESCHOOL_PROGRAMME
+        if programme == BIBLE_STUDY_PROGRAMME and subject.slug != BIBLE_SUBJECT_SLUG:
+            raise HTTPException(status_code=403, detail="This lesson is not included in the Bible Study programme")
+        enrolled = db.query(ChildSubject).join(Child).filter(
+            Child.parent_id == current_user.id,
+            ChildSubject.subject_id == subject.id,
+        ).first()
+        if not enrolled:
+            raise HTTPException(status_code=403, detail="No child is enrolled in this lesson subject")
+        return lesson
+    raise HTTPException(status_code=403, detail="Lesson access is not permitted")
+
 def verify_password(plain_password, hashed_password):
     try:
         return pwd_context.verify(plain_password, hashed_password)
@@ -102,8 +167,7 @@ def create_access_token(data: dict):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-@router.post("/register", response_model=TokenResponse)
-def register(user_in: UserRegister, db: Session = Depends(get_db)):
+def _register_parent(user_in: UserRegister, db: Session, programme: str) -> dict:
     if (user_in.role or "parent").lower() != "parent":
         raise HTTPException(status_code=403, detail="Public registration only supports parent accounts")
     normalized_email = user_in.email.strip().lower()
@@ -116,6 +180,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         name=user_in.name,
         password_hash=get_password_hash(user_in.password),
         role="parent",
+        programme=programme,
         avatar=user_in.name[0].upper() if user_in.name else "U"
     )
     db.add(user)
@@ -131,6 +196,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
             "name": user.name,
             "email": user.email,
             "role": user.role,
+            "programme": user.programme or HOMESCHOOL_PROGRAMME,
             "avatar": user.avatar
         }
     }
@@ -155,11 +221,22 @@ def login(creds: UserLogin, db: Session = Depends(get_db)):
             "name": user.name,
             "email": user.email,
             "role": user.role,
+            "programme": effective_child_programme(child) if child else (user.programme or HOMESCHOOL_PROGRAMME),
             "avatar": child.avatar if child else user.avatar,
             "child_id": child.id if child else None,
             "profile_image_url": f"/api/parent/children/{child.id}/profile-image" if child and child.profile_image_name else None,
         }
     }
+
+
+@router.post("/register", response_model=TokenResponse)
+def register(user_in: UserRegister, db: Session = Depends(get_db)):
+    return _register_parent(user_in, db, HOMESCHOOL_PROGRAMME)
+
+
+@router.post("/register/bible-study", response_model=TokenResponse)
+def register_bible_study(user_in: UserRegister, db: Session = Depends(get_db)):
+    return _register_parent(user_in, db, BIBLE_STUDY_PROGRAMME)
 
 
 @router.post("/forgot-password")
@@ -235,6 +312,14 @@ def add_child(
     lvl_label = get_level_label(lvl, edu_sys)
 
     requested_subject_ids = child_in.subject_ids or []
+    parent_programme = parent.programme or HOMESCHOOL_PROGRAMME
+    if parent_programme == BIBLE_STUDY_PROGRAMME:
+        bible_subject = db.query(Subject).filter(Subject.slug == BIBLE_SUBJECT_SLUG).first()
+        if not bible_subject:
+            raise HTTPException(status_code=503, detail="Bible Study curriculum is not configured yet")
+        if requested_subject_ids and set(requested_subject_ids) != {bible_subject.id}:
+            raise HTTPException(status_code=403, detail="Bible Study accounts may only enroll in Understanding The Word")
+        requested_subject_ids = [bible_subject.id]
     if requested_subject_ids:
         subjects = db.query(Subject).filter(Subject.id.in_(requested_subject_ids)).all()
         if len(subjects) != len(set(requested_subject_ids)):
@@ -267,6 +352,7 @@ def add_child(
             name=child_in.name,
             password_hash=get_password_hash(student_password),
             role="student",
+            programme=parent_programme,
             avatar=child_in.avatar or "🦁",
         )
         db.add(student_user)

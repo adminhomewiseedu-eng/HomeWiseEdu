@@ -4,7 +4,7 @@ import InputField from '../atoms/InputField';
 import Button from '../atoms/Button';
 import BrandLogo from '../molecules/BrandLogo';
 
-export default function SignupScreen({ onNavigate, onSignup }) {
+export default function SignupScreen({ onNavigate, onSignup, bibleStudy = false }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,8 +33,8 @@ export default function SignupScreen({ onNavigate, onSignup }) {
         <div className="auth-form-side">
           <div className="auth-card">
             <div className="auth-form-logo"><BrandLogo onClick={() => onNavigate('/')} /></div>
-            <h2>Create your account</h2>
-            <p className="sub">Start your family's learning journey.</p>
+            <h2>{bibleStudy ? 'Join Bible Study' : 'Create your account'}</h2>
+            <p className="sub">{bibleStudy ? 'Free during testing · Learn Understanding The Word together.' : "Start your family's learning journey."}</p>
 
             {error && (
               <div style={{ background: '#FFF1F0', color: '#DC2626', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 700, marginBottom: 14 }}>
@@ -47,12 +47,13 @@ export default function SignupScreen({ onNavigate, onSignup }) {
               <InputField label="Email address" type="email" placeholder="e.g. you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
               <InputField label="Password" type="password" placeholder="Create a password" value={password} onChange={(e) => setPassword(e.target.value)} required />
               <Button type="submit" variant="primary" style={{ width: '100%' }} disabled={loading}>
-                {loading ? 'Creating account...' : 'Create account →'}
+                {loading ? 'Creating account...' : bibleStudy ? 'Create Bible Study account →' : 'Create account →'}
               </Button>
             </form>
 
             <div className="auth-alt">
               Already have an account? <a onClick={() => onNavigate('/login')}>Log in</a>
+              {bibleStudy && <><br/><a onClick={() => onNavigate('/signup')}>Choose Full Homeschool instead</a></>}
             </div>
           </div>
         </div>

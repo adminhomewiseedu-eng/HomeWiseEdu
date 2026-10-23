@@ -4,7 +4,8 @@ from typing import Dict, Any, List
 from ..database import get_db
 from ..models import Child, Subject, Unit, Lesson, LessonDay, StudentProgress, LearningEvidence, ChildSubject, User, LessonSession
 from ..utils.levels import get_level_label
-from .auth import get_current_user, authorize_child
+from .auth import (get_current_user, authorize_child, effective_child_programme,
+                   BIBLE_STUDY_PROGRAMME, BIBLE_SUBJECT_SLUG)
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 PUBLISHED_STATUSES = {"active", "published"}
@@ -31,9 +32,22 @@ def get_student_dashboard(
     enrollments = db.query(ChildSubject).filter(ChildSubject.child_id == child.id).all()
     enrolled_subject_ids = [e.subject_id for e in enrollments]
 
-    if not enrolled_subject_ids:
-        # Default auto-enroll in Mathematics, English Language, Science
-        default_subjs = db.query(Subject).filter(Subject.slug.in_(["mathematics", "english-language", "science"])).all()
+    if effective_child_programme(child) == BIBLE_STUDY_PROGRAMME:
+        bible_subject = db.query(Subject).filter(Subject.slug == BIBLE_SUBJECT_SLUG).first()
+        bible_enrollment = next(
+            (item for item in enrollments if bible_subject and item.subject_id == bible_subject.id),
+            None,
+        )
+        if bible_subject and not bible_enrollment:
+            db.add(ChildSubject(child_id=child.id, subject_id=bible_subject.id))
+            db.commit()
+        enrolled_subject_ids = [bible_subject.id] if bible_subject else []
+    elif not enrolled_subject_ids:
+        # Preserve the legacy homeschool fallback while preventing Bible-only
+        # children from ever receiving homeschool subjects on dashboard read.
+        default_subjs = db.query(Subject).filter(
+            Subject.slug.in_(["mathematics", "english-language", "science"])
+        ).all()
         for s in default_subjs:
             db.add(ChildSubject(child_id=child.id, subject_id=s.id))
         db.commit()

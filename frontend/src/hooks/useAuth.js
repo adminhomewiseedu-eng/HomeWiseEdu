@@ -50,11 +50,27 @@ export function useAuth() {
     }
   };
 
+  const registerBibleStudy = async (name, email, password) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await authAPI.registerBibleStudy(name, email, password);
+      localStorage.setItem('token', res.data.access_token);
+      saveUser(res.data.user);
+      return res.data.user;
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Registration failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
     saveUser(null);
   };
 
-  return { currentUser, setCurrentUser: saveUser, login, register, logout, loading, error };
+  return { currentUser, setCurrentUser: saveUser, login, register, registerBibleStudy, logout, loading, error };
 }

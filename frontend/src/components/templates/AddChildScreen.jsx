@@ -6,9 +6,10 @@ import BrandLogo from '../molecules/BrandLogo';
 import { getEducationSystems, getAvailableLevels, getLevelLabel } from '../../utils/levels';
 import { curriculumAPI } from '../../services/api';
 
-export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAddChild }) {
+export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAddChild, bibleStudy = false }) {
   const [name, setName] = useState('');
   const [age, setAge] = useState(9);
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [educationSystem, setEducationSystem] = useState('UK');
   const [level, setLevel] = useState(4);
   const [avatar, setAvatar] = useState('🦁');
@@ -25,6 +26,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (bibleStudy) { setSubjectsLoading(false); return; }
     async function fetchSubjects() {
       try {
         setSubjectsError('');
@@ -48,7 +50,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
       }
     }
     fetchSubjects();
-  }, []);
+  }, [bibleStudy]);
 
   const handleEducationSystemChange = (e) => {
     const newSys = e.target.value;
@@ -76,9 +78,9 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
     setLoading(true);
     try {
       await onAddChild({
-        name: name.trim(), age: Number(age), education_system: educationSystem,
+        name: name.trim(), age: Number(age), date_of_birth: dateOfBirth || null, education_system: educationSystem,
         level: Number(level), grade: getLevelLabel(level, educationSystem),
-        subject_ids: selectedSubjectIds, avatar, profile_image: profileImage,
+        ...(bibleStudy ? {} : { subject_ids: selectedSubjectIds }), avatar, profile_image: profileImage,
         student_email: enableStudentLogin ? studentEmail.trim() : null,
         student_password: enableStudentLogin ? studentPassword : null,
       });
@@ -98,7 +100,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
       <div className="app">
         <div className="appbar">
           <div className="wrap">
-            <button className="parent-brand" type="button" onClick={() => onNavigate('/parent')} aria-label="Go to parent dashboard">
+            <button className="parent-brand" type="button" onClick={() => onNavigate(bibleStudy ? '/bible-study/parent' : '/parent')} aria-label="Go to parent dashboard">
               <BrandLogo variant="crest" />
               <span>HomeWiseEdu</span>
             </button>
@@ -113,11 +115,11 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
           <div className="add-child-intro" style={{ textAlign: 'center', marginBottom: 26 }}>
             <div style={{ fontSize: 46 }}>👋</div>
             <div className="add-child-title-row" style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 6 }}>
-              <button type="button" className="btn btn-ghost btn-sm add-child-back" onClick={() => onNavigate('/parent')} style={{ position: 'absolute', left: 24 }}>← Back</button>
+              <button type="button" className="btn btn-ghost btn-sm add-child-back" onClick={() => onNavigate(bibleStudy ? '/bible-study/parent' : '/parent')} style={{ position: 'absolute', left: 24 }}>← Back</button>
               <h1 style={{ fontSize: 30, color: 'var(--plum)' }}>Add your child</h1>
             </div>
             <p style={{ color: 'var(--ink-soft)', fontWeight: 600, marginTop: 4 }}>
-              Configure their education system, level, and academic pathway.
+              {bibleStudy ? 'Set up their level and Understanding The Word learning journey.' : 'Configure their education system, level, and academic pathway.'}
             </p>
           </div>
 
@@ -141,6 +143,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                   required
                 />
               </div>
+              <InputField label="Date of birth (optional)" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} />
 
               <div className="add-child-grid">
                 <div className="field">
@@ -166,7 +169,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 </div>
               </div>
 
-              <div className="field">
+              {!bibleStudy && <div className="field">
                 <label>Academic Pathway Subjects</label>
                 <p style={{ fontSize: 13, color: 'var(--ink-soft)', marginBottom: 8, fontWeight: 500 }}>
                   Select the subjects your child will study:
@@ -201,7 +204,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 </div>
                 {subjectsLoading && <p style={{ fontSize: 13, color: 'var(--ink-soft)' }}>Loading subjects…</p>}
                 {subjectsError && <div className="admin-notice" style={{ marginTop: 8 }}>{subjectsError}</div>}
-              </div>
+              </div>}
 
               <div className="field" style={{ marginTop: 16 }}>
                 <label>Pick an avatar</label>
@@ -213,6 +216,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setProfileImage(e.target.files?.[0] || null)} />
                 <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 5 }}>JPEG, PNG or WebP · maximum 5 MB. The avatar remains as fallback.</p>
               </div>
+              {bibleStudy && <div className="bible-enrolment-note" role="status"><span>📖</span><div><strong>Understanding The Word</strong><p>Enrollment is added securely when this child is created.</p></div></div>}
 
               <div className="field" style={{ marginTop: 16 }}>
                 <label className="student-login-toggle">
@@ -229,7 +233,7 @@ export default function AddChildScreen({ parentName = 'Parent', onNavigate, onAd
                 <p style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: -8, marginBottom: 12 }}>Passwords are securely hashed and cannot be viewed after saving.</p>
               </>}
 
-              <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading || subjectsLoading || availableSubjects.length === 0}>
+              <Button type="submit" variant="primary" style={{ width: '100%', marginTop: 12 }} disabled={loading || (!bibleStudy && (subjectsLoading || availableSubjects.length === 0))}>
                 {loading ? 'Creating child...' : 'Create child →'}
               </Button>
             </form>

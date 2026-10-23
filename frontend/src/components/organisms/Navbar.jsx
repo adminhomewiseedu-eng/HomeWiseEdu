@@ -5,21 +5,24 @@ import { Settings, LogOut } from 'lucide-react';
 import { parentAPI } from '../../services/api';
 
 export default function Navbar({ currentScreen, userRole, onNavigate, activeChild, currentUser, onLogout, parentProfileRevision = 0 }) {
-  const normalized = (currentScreen || '').replace('/', '');
-  const isHidden = ['', 'landing', 'signup', 'login', 'forgot-password', 'reset-password', 'add-child', 'addchild', 'lesson', 'quiz', 'submit', 'complete'].includes(normalized);
-  if (isHidden || normalized.startsWith('admin')) return null;
+  const normalized = (currentScreen || '').replace(/^\/+|\/+$/g, '');
+  const isHidden = ['', 'landing', 'signup', 'bible-study/signup', 'login', 'forgot-password', 'reset-password', 'add-child', 'bible-study/add-child', 'addchild', 'lesson', 'quiz', 'submit', 'complete'].includes(normalized);
+  const shouldHide = isHidden || normalized.startsWith('admin');
 
   const initial = currentUser?.avatar || currentUser?.name?.[0]?.toUpperCase() || 'U';
   const [parentImage, setParentImage] = useState(null);
   useEffect(() => {
     let url;
-    if (userRole === 'parent') parentAPI.getParentProfileImage().then(({ data }) => { url = URL.createObjectURL(data); setParentImage(url); }).catch(() => setParentImage(null));
+    if (!shouldHide && userRole === 'parent') parentAPI.getParentProfileImage().then(({ data }) => { url = URL.createObjectURL(data); setParentImage(url); }).catch(() => setParentImage(null));
     return () => { if (url) URL.revokeObjectURL(url); };
-  }, [userRole, parentProfileRevision]);
+  }, [shouldHide, userRole, parentProfileRevision]);
+
+  if (shouldHide) return null;
 
   const handleLogoClick = () => {
     if (currentUser) {
-      onNavigate(currentUser.role === 'admin' ? '/admin' : currentUser.role === 'student' ? '/student' : '/parent');
+      const bible = currentUser.programme === 'bible_study';
+      onNavigate(currentUser.role === 'admin' ? '/admin' : bible ? (currentUser.role === 'student' ? '/bible-study/student' : '/bible-study/parent') : currentUser.role === 'student' ? '/student' : '/parent');
     } else {
       onNavigate('/');
     }
@@ -31,8 +34,8 @@ export default function Navbar({ currentScreen, userRole, onNavigate, activeChil
         <button className="parent-brand" onClick={handleLogoClick}><BrandLogo variant="crest" /><span>HomeWiseEdu</span></button>
 
         <div className="appbar-right">
-          {(normalized === 'student' || normalized === 'portfolio') && userRole === 'parent' && (
-            <button className="btn btn-ghost btn-sm parent-dashboard-link" onClick={() => onNavigate('/parent')} style={{ fontWeight: 600 }}>
+          {(normalized.endsWith('student') || normalized === 'portfolio') && userRole === 'parent' && (
+            <button className="btn btn-ghost btn-sm parent-dashboard-link" onClick={() => onNavigate(currentUser?.programme === 'bible_study' ? '/bible-study/parent' : '/parent')} style={{ fontWeight: 600 }}>
               ← Parent Dashboard
             </button>
           )}

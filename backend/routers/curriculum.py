@@ -7,7 +7,8 @@ from ..models import (Subject, Unit, Lesson, LessonDay, QuizQuestion, QuizAttemp
                       StudentProgress, LessonSession, LearningEvidence, AIInteraction)
 from ..schemas import SubjectOut, LessonDetailOut, LessonDayOut
 from ..models import User
-from .auth import get_current_user, require_admin
+from .auth import (get_current_user, require_admin, authorize_lesson_for_user,
+                   BIBLE_STUDY_PROGRAMME, BIBLE_SUBJECT_SLUG)
 from ..services.curriculum_importer import import_curriculum_csv_data
 import logging
 
@@ -48,8 +49,14 @@ class LessonDayUpdate(BaseModel):
     vocabulary: Optional[List[Any]] = None
 
 @router.get("/subjects", response_model=List[SubjectOut])
-def get_subjects(db: Session = Depends(get_db)):
-    return db.query(Subject).order_by(Subject.id.asc()).all()
+def get_subjects(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(Subject)
+    if current_user.role != "admin" and (current_user.programme or "homeschool") == BIBLE_STUDY_PROGRAMME:
+        query = query.filter(Subject.slug == BIBLE_SUBJECT_SLUG)
+    return query.order_by(Subject.id.asc()).all()
 
 @router.get("/lessons/{lesson_id}", response_model=LessonDetailOut)
 def get_lesson_detail(
@@ -62,6 +69,7 @@ def get_lesson_detail(
         raise HTTPException(status_code=404, detail="Lesson not found")
     if current_user.role != "admin" and (lesson.archived or (lesson.days and not any((day.status or "").lower() in PUBLISHED_STATUSES for day in lesson.days))):
         raise HTTPException(status_code=404, detail="Lesson not found")
+    lesson = authorize_lesson_for_user(db, current_user, lesson_id)
     # Quiz questions (and their answers) are available only through the
     # readiness-gated lesson quiz endpoint.
     return LessonDetailOut.model_validate(lesson).model_copy(update={"quiz_questions": []})

@@ -35,6 +35,8 @@ def ensure_db_schema():
             conn.execute(text("ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0"))
         if user_columns and "account_status" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR NOT NULL DEFAULT 'active'"))
+        if user_columns and "programme" not in user_columns:
+            conn.execute(text("ALTER TABLE users ADD COLUMN programme VARCHAR NOT NULL DEFAULT 'homeschool'"))
         if user_columns and "updated_at" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
             conn.execute(text("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))

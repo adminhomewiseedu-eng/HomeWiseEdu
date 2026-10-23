@@ -32,6 +32,7 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (email, password) => api.post('/api/auth/login', { email, password }),
   register: (name, email, password, role = 'parent') => api.post('/api/auth/register', { name, email, password, role }),
+  registerBibleStudy: (name, email, password) => api.post('/api/auth/register/bible-study', { name, email, password, role: 'parent' }),
   forgotPassword: (email) => api.post('/api/auth/forgot-password', { email }),
   resetPassword: (token, newPassword) => api.post('/api/auth/reset-password', { token, new_password: newPassword }),
   addChild: (childData, maybeAge, maybeGrade, maybeAvatar, maybeParentId) => {

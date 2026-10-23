@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-
 import Navbar from './components/organisms/Navbar';
 import LandingScreen from './components/templates/LandingScreen';
 import SignupScreen from './components/templates/SignupScreen';
+import BibleSignupScreen from './components/templates/BibleSignupScreen';
 import LoginScreen from './components/templates/LoginScreen';
 import ForgotPasswordScreen from './components/templates/ForgotPasswordScreen';
 import ResetPasswordScreen from './components/templates/ResetPasswordScreen';
@@ -20,11 +21,12 @@ import ParentProfileScreen from './components/templates/ParentProfileScreen';
 import { useAuth } from './hooks/useAuth';
 import { authAPI, parentAPI } from './services/api';
 import { preserveRealtimeTrace } from './utils/diagnosticRouting';
+import { dashboardFor, isBibleUser, mayOpenProgrammeRoute, BIBLE_PROGRAMME } from './utils/programmeRouting';
 
 export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentUser, setCurrentUser, login, register, logout } = useAuth();
+  const { currentUser, setCurrentUser, login, register, registerBibleStudy, logout } = useAuth();
   const [parentProfileRevision, setParentProfileRevision] = useState(0);
   const [activeChild, setActiveChild] = useState(() => {
     try {
@@ -66,11 +68,16 @@ export default function App() {
     const user = await login(email, pw);
     if (user.role === 'student') {
       saveActiveChild({ id: user.child_id, name: user.name, avatar: user.avatar, profile_image_url: user.profile_image_url });
-      go('/student');
+      go(dashboardFor(user));
     } else {
       saveActiveChild(null);
-      go(user.role === 'admin' ? '/admin' : '/parent');
+      go(dashboardFor(user));
     }
+  };
+
+  const handleBibleSignup = async (name, email, pw) => {
+    await registerBibleStudy(name, email, pw);
+    go('/bible-study/add-child');
   };
 
   const handleSignup = async (name, email, pw) => {
@@ -78,7 +85,7 @@ export default function App() {
     go('/add-child');
   };
 
-  const handleAddChild = async (childData) => {
+  const handleAddChild = async (childData, destination = null) => {
     try {
       let pId = currentUser?.id;
       if (!pId) {
@@ -103,14 +110,15 @@ export default function App() {
       console.error('Failed to add child:', e);
       throw e;
     }
-    go('/parent');
+    go(destination || dashboardFor(currentUser));
   };
 
   const handleLogout = () => { logout(); saveActiveChild(null); go('/'); };
 
   const userRole = currentUser?.role || 'parent';
-  const currentPath = location.pathname.replace('/', '') || 'landing';
-  const publicPages = ['', 'landing', 'signup', 'login', 'forgot-password', 'reset-password'];
+  const currentPath = location.pathname.replace(/^\/+|\/+$/g, '') || 'landing';
+  const publicPages = ['', 'landing', 'signup', 'bible-study/signup', 'login', 'forgot-password', 'reset-password'];
+  const standaloneAuthPages = ['signup', 'bible-study/signup', 'login', 'forgot-password', 'reset-password'];
   const isProtected = !publicPages.includes(currentPath);
   if (isProtected && !currentUser && currentPath !== 'add-child') {
     return <Navigate to="/login" replace />;
@@ -118,20 +126,24 @@ export default function App() {
 
   return (
     <div className="app">
-      <Navbar currentScreen={currentPath} userRole={userRole} onNavigate={go} activeChild={activeChild} currentUser={currentUser} onLogout={handleLogout} parentProfileRevision={parentProfileRevision} />
+      {!standaloneAuthPages.includes(currentPath) && <Navbar currentScreen={currentPath} userRole={userRole} onNavigate={go} activeChild={activeChild} currentUser={currentUser} onLogout={handleLogout} parentProfileRevision={parentProfileRevision} />}
       <Routes>
         <Route path="/" element={<LandingScreen onNavigate={go} onStartLesson={() => go('/login')} />} />
         <Route path="/signup" element={<SignupScreen onNavigate={go} onSignup={handleSignup} />} />
+        <Route path="/bible-study/signup" element={<BibleSignupScreen onNavigate={go} onSignup={handleBibleSignup} />} />
         <Route path="/login" element={<LoginScreen onNavigate={go} onLogin={handleLogin} />} />
         <Route path="/forgot-password" element={<ForgotPasswordScreen onNavigate={go} />} />
         <Route path="/reset-password" element={<ResetPasswordScreen onNavigate={go} />} />
-        <Route path="/add-child" element={currentUser?.role === 'parent' ? <AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : '/login'} replace />} />
-        <Route path="/parent" element={currentUser?.role === 'parent' ? <ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/student' : currentUser?.role === 'admin' ? '/admin' : '/login'} replace />} />
+        <Route path="/add-child" element={currentUser?.role === 'parent' && mayOpenProgrammeRoute(currentUser, 'homeschool') ? <AddChildScreen parentName={currentUser?.name} onNavigate={go} onAddChild={handleAddChild} /> : <Navigate to={dashboardFor(currentUser)} replace />} />
+        <Route path="/bible-study/add-child" element={currentUser?.role === 'parent' && mayOpenProgrammeRoute(currentUser, BIBLE_PROGRAMME) ? <AddChildScreen bibleStudy parentName={currentUser?.name} onNavigate={go} onAddChild={(data) => handleAddChild(data, '/bible-study/parent')} /> : <Navigate to={dashboardFor(currentUser)} replace />} />
+        <Route path="/parent" element={currentUser?.role === 'parent' && mayOpenProgrammeRoute(currentUser, 'homeschool') ? <ParentDashboardScreen parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/student'); }} onAddChild={() => go('/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={dashboardFor(currentUser)} replace />} />
+        <Route path="/bible-study/parent" element={currentUser?.role === 'parent' && isBibleUser(currentUser) ? <ParentDashboardScreen bibleStudy parentId={currentUser?.id} onSelectChild={(c) => { saveActiveChild(c); go('/bible-study/student'); }} onAddChild={() => go('/bible-study/add-child')} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={dashboardFor(currentUser)} replace />} />
         <Route path="/parent/profile" element={currentUser?.role === 'parent' ? <ParentProfileScreen onNavigate={go} profileRevision={parentProfileRevision} /> : <Navigate to="/login" replace />} />
         <Route path="/parent/settings/profile" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="profile" onNavigate={go} onProfileUpdated={(profile) => { setCurrentUser({ ...currentUser, name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || currentUser.name }); setParentProfileRevision((value) => value + 1); }} /> : <Navigate to="/login" replace />} />
         <Route path="/parent/settings/account" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="account" onNavigate={go} /> : <Navigate to="/login" replace />} />
         <Route path="/parent/settings/security" element={currentUser?.role === 'parent' ? <ParentSettingsScreen section="security" onNavigate={go} /> : <Navigate to="/login" replace />} />
-        <Route path="/student" element={activeChild ? <StudentDashboardScreen child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/login' : '/parent'} replace />} />
+        <Route path="/student" element={!isBibleUser(currentUser) && activeChild ? <StudentDashboardScreen child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={dashboardFor(currentUser)} replace />} />
+        <Route path="/bible-study/student" element={isBibleUser(currentUser) && activeChild ? <StudentDashboardScreen bibleStudy child={activeChild} onBackToParent={currentUser?.role === 'parent' ? () => go('/bible-study/parent') : null} onStartLesson={(lessonRef) => { selectLessonContext(lessonRef); go('/lesson'); }} onStartQuiz={(lessonRef) => { selectLessonContext(lessonRef); go('/quiz'); }} onViewPortfolio={() => go('/portfolio')} /> : <Navigate to={currentUser?.role === 'student' ? '/login' : dashboardFor(currentUser)} replace />} />
         <Route path="/lesson" element={<LessonPlayerScreen lessonId={activeLessonId} dayNumber={activeDayNumber} activityType={activeActivityType} child={activeChild} onExit={() => go('/student')} onProceedToQuiz={(l) => { setCurrentLessonData(l); setActiveLessonId(l?.id || activeLessonId); go('/quiz'); }} />} />
         <Route path="/quiz" element={<QuizScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} onExit={() => go('/student')} onQuizComplete={(res) => { setQuizResultData(res); go('/submit'); }} />} />
         <Route path="/submit" element={<EvidenceSubmitScreen lesson={currentLessonData} lessonId={activeLessonId} dayNumber={activeDayNumber} child={activeChild} quizResult={quizResultData} onExit={() => go('/student')} onSubmitSuccess={() => go('/complete')} />} />

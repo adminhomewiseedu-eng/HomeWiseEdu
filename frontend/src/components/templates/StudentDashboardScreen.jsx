@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import SubjectProgressRow from '../molecules/SubjectProgressRow';
 import { useStudentDashboard } from '../../hooks/useStudentDashboard';
+import { bibleSubjectsOnly } from '../../utils/programmeRouting';
 
-export default function StudentDashboardScreen({ child, onStartLesson, onStartQuiz, onViewPortfolio, onBackToParent }) {
+export default function StudentDashboardScreen({ child, onStartLesson, onStartQuiz, onViewPortfolio, onBackToParent, bibleStudy = false }) {
   const getStoredChildId = () => {
     if (child?.id) return Number(child.id);
     try {
@@ -36,6 +37,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
     learning_evidence = [],
     ai_feedback_snippet
   } = data;
+  const visibleProgress = bibleStudy ? bibleSubjectsOnly(progress_by_subject) : progress_by_subject;
 
   return (
     <div className="wrap" style={{ paddingBottom: '50px' }}>
@@ -64,7 +66,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
       <div className="student-welcome" style={{ background: 'linear-gradient(135deg,var(--teal),var(--sky))', borderRadius: 26, padding: 30, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 22px 0', position: 'relative', overflow: 'hidden' }}>
         <div className="hero-blob" style={{ width: 180, height: 180, background: '#fff', opacity: 0.15, top: -50, right: 40 }} />
         <div style={{ position: 'relative', zIndex: 2 }}>
-          <h2 style={{ fontSize: 30 }}>Welcome, {name}! 🌟</h2>
+          <h2 style={{ fontSize: 30 }}>{bibleStudy ? 'Welcome to Bible Study' : 'Welcome'}, {name}! 🌟</h2>
           <p style={{ fontWeight: 600, opacity: 0.9, fontSize: 16 }}>
             {completed_lessons_count > 0 ? `${completed_lessons_count} lesson${completed_lessons_count > 1 ? 's' : ''} completed so far!` : "Today's learning path is ready."}
           </p>
@@ -119,7 +121,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
         <div className="card pad">
           <div className="card-head"><h3>My Progress</h3></div>
           {progress_by_subject.length > 0 ? (
-            progress_by_subject.map((p, i) => (
+            visibleProgress.map((p, i) => (
               <SubjectProgressRow
                 key={i}
                 icon={p.icon}
@@ -130,7 +132,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
             ))
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink-soft)' }}>
-              <p>No subjects loaded.</p>
+              <p>{bibleStudy ? 'Understanding The Word is being prepared for your level.' : 'No subjects loaded.'}</p>
             </div>
           )}
         </div>

@@ -28,6 +28,17 @@ test('parent header exposes settings, profile avatar, and logout', () => {
   assert.match(nav, /header-icon-action/); assert.doesNotMatch(nav, /<span>Settings<\/span>/); assert.doesNotMatch(nav, /<span>Log out<\/span>/);
 });
 
+test('parent header preserves hook order when routes hide or show the navbar', () => {
+  const stateHook = nav.indexOf('useState(null)');
+  const effectHook = nav.indexOf('useEffect(() =>');
+  const hiddenReturn = nav.indexOf('if (shouldHide) return null');
+
+  assert.ok(stateHook >= 0 && effectHook > stateHook, 'navbar hooks should be declared unconditionally');
+  assert.ok(hiddenReturn > effectHook, 'hidden-route return must occur after all hooks');
+  assert.match(nav, /if \(!shouldHide && userRole === 'parent'\)/);
+  assert.match(nav, /\[shouldHide, userRole, parentProfileRevision\]/);
+});
+
 test('parent profile overview is read-only and links to editing in settings', () => {
   assert.match(app, /path="\/parent\/profile"/);
   assert.match(overview, /My Profile/); assert.match(overview, /Phone number/); assert.match(overview, /Address/);

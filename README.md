@@ -1,77 +1,61 @@
 # HomeWiseEdu
 
-HomeWiseEdu is an AI-supported homeschooling platform built around a structured curriculum. The backend—not the language model—owns lesson progression, mastery decisions, quiz readiness, enrolment, and persisted learning state.
+HomeWiseEdu is a role-based homeschooling platform combining administrator-managed curriculum, parent oversight, student dashboards, quizzes, learning evidence, and a live AI classroom led by “Ms Ade.” The backend remains authoritative for authentication, ownership, curriculum publication, lesson progression, mastery, quiz readiness, and persisted learning records.
 
-## Product architecture
+Production: [https://homewiseedu.com](https://homewiseedu.com)
 
-- **Frontend:** React 18, Vite, React Router and Axios
-- **Backend:** FastAPI, SQLAlchemy and Alembic
-- **Production database:** PostgreSQL
-- **AI tutoring and evaluation:** OpenAI, called only from the backend
-- **Primary teacher voice:** ElevenLabs
-- **Voice fallbacks:** backend OpenAI TTS, then browser speech synthesis
-- **Production target:** Railway with separate frontend, backend and PostgreSQL services
+## Handover status
 
-The pedagogical sequence is backend-governed:
+- The application is deployed at `homewiseedu.com`.
+- Curriculum validation, import, review, publication, archive/restore, dependency checks, and protected deletion are implemented.
+- The client’s complete final production curriculum has **not** yet been supplied. Final curriculum population is therefore a client-supplied content task.
+- New or materially changed curriculum may require reviewed quiz content before student use.
+- Current/test curriculum must not be presented as the client’s complete final curriculum.
+- Stripe checkout, billing, and subscriptions are **not implemented or production-ready**. Pricing/trial labels are presentation only; the API reports billing as not configured.
+
+Before operational handover, use [docs/HANDOVER_CHECKLIST.md](docs/HANDOVER_CHECKLIST.md) and [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+
+## Stack and architecture
+
+- **Frontend:** React 18, Vite 6, React Router, Axios, Lucide
+- **Backend:** FastAPI, SQLAlchemy 2, Pydantic, Uvicorn
+- **Database/migrations:** PostgreSQL and Alembic (SQLite is available locally)
+- **Authentication:** JWT, password hashing, role and ownership checks
+- **AI/classroom:** OpenAI tutoring/evaluation and OpenAI Realtime over WebRTC
+- **Email:** Resend transactional email with SMTP fallback support
+- **Hosting/storage:** Railway frontend, backend, PostgreSQL, and backend persistent volume
+
+```text
+React browser ──HTTPS API──► FastAPI ──SQLAlchemy──► PostgreSQL
+      └────────WebRTC──────► OpenAI Realtime
+                              ├─ Resend/SMTP
+                              └─ persistent uploads volume
+```
+
+OpenAI does not independently grant mastery or unlock quizzes. The backend owns pedagogical state, active questions/tasks, delivery acknowledgement, evaluation, practice readiness, and progress. The classroom sequence is:
 
 `GREETING → TEACHING → WORKED_EXAMPLE_1 → WORKED_EXAMPLE_2 → WORKED_EXAMPLE_3 → UNDERSTANDING_CHECK → GUIDED_PRACTICE → APPLICATION → MASTERY_CHECK → LESSON_SUMMARY → PRACTICE_READY`
-
-The AI may explain, tutor and evaluate a response, but it cannot independently unlock practice or decide curriculum progression.
 
 ## Repository structure
 
 ```text
-backend/                 FastAPI application, migrations, models and tests
-backend/prompts/         Tutor and evaluation prompt templates
-backend/routers/         Auth, curriculum, lesson, voice and dashboard APIs
-backend/services/        AI, voice, curriculum import and storage services
-frontend/                React/Vite application
-frontend/src/components/ Application screens and UI components
-frontend/src/services/   API and coordinated speech/audio clients
-DEPLOYMENT_RAILWAY.md     Detailed Railway production runbook
-railway.json             Backend Railway configuration
+backend/                      FastAPI application, models, routers and tests
+backend/services/             Curriculum, AI, email, voice and storage services
+backend/prompts/              Server-side AI prompt templates
+backend/migrations/versions/  Alembic revisions
+frontend/                     React/Vite app and frontend Railway service
+frontend/src/components/      Screens and UI components
+frontend/src/services/        API, speech and Realtime clients
+frontend/src/utils/           Classroom/UI helpers and tests
+docs/                         Handover and user documentation
+alembic.ini                   Migration configuration
+railway.json                  Backend Railway configuration
+DEPLOYMENT_RAILWAY.md         Detailed deployment runbook
 ```
 
-## Local requirements
+## Local setup
 
-- Python 3.11 or newer
-- Node.js 20 or newer
-- PostgreSQL for production; SQLite is supported for local development
-- OpenAI API key
-- ElevenLabs API key and voice ID
-
-## Environment configuration
-
-Create `.env` in the repository root for local backend development:
-
-```dotenv
-ENVIRONMENT=development
-DATABASE_URL=sqlite:///./homewiseedu.db
-SECRET_KEY=replace-with-a-random-secret-of-at-least-32-characters
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_MODEL=gpt-4o-mini
-ELEVENLABS_API_KEY=your-elevenlabs-api-key
-ELEVENLABS_VOICE_ID=your-ms-ade-voice-id
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-FRONTEND_URL=http://localhost:3000
-PASSWORD_RESET_EXPIRE_MINUTES=45
-# Development-only reset-link capture; never enable in production.
-PASSWORD_RESET_DEV_MODE=true
-AUTO_INIT_DB=true
-SEED_MODE=demo
-```
-
-Create `frontend/.env.local`:
-
-```dotenv
-VITE_API_URL=http://127.0.0.1:8000
-```
-
-Never place `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `SECRET_KEY` or `DATABASE_URL` in frontend variables. Environment files are excluded by `.gitignore` and must not be committed.
-
-Password-reset email delivery uses backend-only SMTP configuration: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, and `SMTP_USE_TLS`. Production startup fails if SMTP delivery is absent, preventing a deployment from silently exposing a broken recovery flow. Local developers may temporarily enable `PASSWORD_RESET_DEV_MODE`; captured links remain in the backend process only and are never returned by the API or logged. Production rejects this setting.
-
-## Run locally
+Requirements: Python 3.11+, Node.js 20+, npm, and PostgreSQL for production-like development (or SQLite locally).
 
 ### Backend
 
@@ -79,14 +63,13 @@ Password-reset email delivery uses backend-only SMTP configuration: `SMTP_HOST`,
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r backend/requirements.txt
+alembic upgrade head
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Verify:
-
-- API health: `http://127.0.0.1:8000/health`
-- Database readiness: `http://127.0.0.1:8000/ready`
-- API documentation: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
+- Readiness: `http://127.0.0.1:8000/ready`
+- Development API docs: `http://127.0.0.1:8000/docs`
 
 ### Frontend
 
@@ -96,91 +79,128 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal, normally `http://localhost:5173`.
+Set `VITE_API_URL` in `frontend/.env.local` to the backend origin. Never place secrets in `VITE_*` variables; they are embedded in the browser bundle.
 
-Chrome requires microphone permission for voice interaction. Headphones improve interruption detection by reducing teacher-audio feedback into the microphone.
-
-## Tests
-
-Backend:
+### Tests and build
 
 ```powershell
 pytest backend
-```
-
-Frontend voice and resume tests:
-
-```powershell
 cd frontend
 npm test
-```
-
-Production frontend build:
-
-```powershell
-cd frontend
-$env:VITE_API_URL="https://your-backend.example.com"
 npm run build
 ```
 
-## Curriculum administration
+Migration inspection:
 
-Public signup creates parent accounts only; it cannot create administrators. Admin access must be provisioned deliberately by an authorised operator.
+```powershell
+alembic current
+alembic heads
+alembic history
+```
 
-Parents can optionally enable a separate student login while creating or editing a child. Student accounts open only their linked student dashboard, while the owning parent retains access and can reset the student's credentials. Passwords are stored only as hashes and are never returned by the API.
+`python -m backend.seed_data` seeds reference subjects. `python -m backend.seed_data --demo` creates demo data and must never run in production.
 
-The admin curriculum workflow is:
+## Environment variables
 
-1. Sign in with an authorised admin account.
-2. Open **Admin → Curriculum**.
-3. Validate the curriculum CSV.
-4. Import it as pending.
-5. Review the generated hierarchy and lesson-day content.
-6. Publish only approved lessons and lesson days.
+Only names and purposes are documented. Values belong in ignored local files or Railway.
 
-Curriculum structure is `Level → Subject → Unit → Lesson → Lesson Day`. Lesson days are normally Day 1 Explore, Day 2 Practice and Day 3 Apply. A child only sees published curriculum matching their level and enrolled subjects.
+### Backend
 
-Do not commit curriculum files containing private student or client data.
+| Name | Purpose |
+|---|---|
+| `ENVIRONMENT` | Production/development behavior |
+| `DATABASE_URL` | Database connection; PostgreSQL required in production |
+| `SECRET_KEY` | Token signing |
+| `ALLOWED_ORIGINS` | Permitted frontend origins |
+| `FRONTEND_URL` | Public frontend origin for reset links |
+| `PORT`, `RAILWAY_ENVIRONMENT` | Railway runtime metadata |
+| `OPENAI_API_KEY` | Server-side OpenAI access |
+| `OPENAI_MODEL` | Text/evaluation model |
+| `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE` | Realtime classroom configuration |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | Supported voice-path configuration |
+| `ELEVENLABS_STABILITY`, `ELEVENLABS_SIMILARITY_BOOST`, `ELEVENLABS_STYLE`, `ELEVENLABS_USE_SPEAKER_BOOST`, `ELEVENLABS_SPEED` | Voice tuning |
+| `RESEND_API_KEY` | Resend credential |
+| `TRANSACTIONAL_FROM_EMAIL`, `TRANSACTIONAL_REPLY_TO_EMAIL` | Central sender/reply-to identities |
+| `PASSWORD_RESET_FROM_EMAIL` | Compatibility sender fallback |
+| `PASSWORD_RESET_EXPIRE_MINUTES`, `PASSWORD_RESET_RATE_LIMIT`, `PASSWORD_RESET_RATE_WINDOW_SECONDS` | Reset expiry/throttling |
+| `PASSWORD_RESET_DEV_MODE` | Development-only capture; forbidden in production |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_TLS` | SMTP fallback |
+| `AUTO_INIT_DB`, `SEED_MODE` | Local schema/seed behavior; disable demo behavior in production |
+| `STORAGE_ROOT`, `TTS_CACHE_DIR` | Persistent uploads and disposable TTS cache |
+| `MAX_UPLOAD_BYTES`, `MAX_PROFILE_IMAGE_BYTES` | Upload limits |
+| `DB_POOL_SIZE`, `DB_MAX_OVERFLOW` | PostgreSQL pool limits |
 
-## Voice behavior
+### Frontend
 
-Ms. Ade uses the backend voice endpoint. ElevenLabs is authoritative, OpenAI TTS is the server fallback, and browser speech synthesis is the final fallback. A single audio coordinator cancels stale playback.
+| Name | Purpose |
+|---|---|
+| `VITE_API_URL` | Public backend origin embedded at build time |
+| `PORT` | Railway frontend port |
 
-During lessons the microphone supports hands-free interruption. A detected interruption stops teacher playback without confirming that interrupted phase as delivered. The application then waits for the student's complete statement before requesting the next tutor response. Unclear or repeat requests must not count as failed academic attempts.
+## Roles
 
-## Production deployment
+- **Admin:** manages parents/students, curriculum, publication, archive/restore, deletion safeguards, quiz review flags, monitoring, and settings. Public signup cannot create admins.
+- **Parent:** manages profile, children, subjects, optional student login, progress, and evidence.
+- **Student:** accesses the linked dashboard, published lessons, classroom, ready quizzes, and evidence/portfolio.
 
-See [DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md) for the complete service layout, required variables, migrations, storage volume, deployment order and smoke-test checklist.
+## Curriculum
 
-Production requires:
+The hierarchy is `Subject → Unit → Lesson → LessonDay`. Imports match by stable curriculum identity (subject, level, unit, lesson number) to preserve lesson IDs and history.
 
-- PostgreSQL `DATABASE_URL`
-- a random `SECRET_KEY` of at least 32 characters
-- OpenAI and ElevenLabs credentials
-- an HTTPS-only `ALLOWED_ORIGINS` value
-- durable `STORAGE_ROOT` for evidence, reports and child profile pictures
-- `VITE_API_URL` configured at frontend build time
-- `ENVIRONMENT=production`, `AUTO_INIT_DB=false` and `SEED_MODE=none`
+- **Multi-day:** exactly `Day 1 Explore`, `Day 2 Practice`, and `Day 3 Apply`.
+- **Weekly:** exactly one `Weekly Lesson` session.
 
-Do not deploy production with demo seed data or local SQLite.
+Cadences cannot be mixed within a lesson or changed on an existing lesson. The Admin workflow is: validate/preview CSV, inspect errors and hierarchy/cadence warnings, import approved content as pending, review/edit, review quiz readiness, then publish. Updates do not rewrite immutable quiz attempts. Material changes may flag quiz review.
 
-## Current scope boundaries
+## Quiz, progress, and evidence
 
-- Structured curriculum import, review and publishing are implemented.
-- Parent, child, student and admin role flows are implemented.
-- Backend-owned lesson progression, quiz readiness and progress persistence are implemented.
-- Reports currently return authenticated JSON; PDF generation is not implemented.
+- Quiz access requires backend practice readiness and reviewed questions.
+- Curriculum practice prompts do not automatically become reviewed quiz questions.
+- `quiz_attempts` contains immutable, idempotent submission snapshots.
+- `student_progress` holds the current progress summary/unlock state.
+- Evidence text/files are ownership-protected and available to authorised student, parent, and admin views.
+
+## Email and AI configuration
+
+Production transactional mail uses Resend with the verified HomeWiseEdu domain and centralized sender settings. SMTP is a fallback. Production fails closed without a valid reset-email path; development reset-link capture must remain disabled in production.
+
+OpenAI keys remain backend-only. The authenticated backend issues short-lived Realtime session configuration; the browser connects via WebRTC while backend authority remains intact. Microphone permission is required. Headphones can reduce echo during barge-in testing.
+
+## Railway deployment
+
+Root `railway.json` installs backend requirements, starts Uvicorn, and checks `/ready`. It does **not** run migrations. Database migrations require a separately approved, explicit operator action after backup verification and before application deployment. `frontend/railway.json` installs/builds the frontend, starts `server.mjs`, and checks `/`. Attach persistent storage only to the backend. See [DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md).
+
+Post-deploy: verify `/health`, `/ready`, `homewiseedu.com`, nested-route refresh, all three roles, a published lesson, and password-reset provider acceptance.
+
+## Maintenance and troubleshooting
+
+- **API/CORS failure:** verify backend health, `VITE_API_URL`, HTTPS, and `ALLOWED_ORIGINS`.
+- **Backend not ready:** inspect migration and PostgreSQL logs; do not bypass readiness.
+- **Missing reset email:** check Resend domain/sender, delivery logs, spam, and rate limits without logging tokens.
+- **Import failure:** validate first; correct headers, hierarchy, cadence, or duplicate days.
+- **Quiz conflict:** check practice readiness, reviewed questions, and quiz-review status; never expose unreviewed questions.
+- **Missing upload after restart:** verify the persistent volume and `STORAGE_ROOT`.
+- **Realtime issue:** capture safe event metadata only; never log keys, tokens, or unnecessary private content.
+
+## Backup and restore
+
+Back up PostgreSQL and the uploads volume separately. A database backup does not contain evidence/profile files.
+
+```powershell
+pg_dump --schema-only --no-owner --no-privileges --file schema-backup.sql <database>
+pg_dump --format=custom --no-owner --file homewiseedu.backup <database>
+pg_restore --clean --if-exists --no-owner --dbname <target-database> homewiseedu.backup
+```
+
+Restore into an approved isolated environment first. Verify Alembic state, foreign keys, record counts, authentication, curriculum, quiz attempts, and protected files before cutover. Encrypt backups and restrict access.
+
+## Known boundaries
+
+- Stripe/payments/subscriptions are not implemented.
+- Reports are authenticated JSON; PDF generation is not implemented.
 - Certificates are not implemented.
-- Subscription checkout and Stripe integration are not implemented.
-
-## Security notes
-
-- Provider keys remain server-side.
-- Role and parent/child ownership checks are enforced by backend routes.
-- Production configuration fails closed when required variables are unsafe or missing.
-- Use separate credentials for development and production.
-- Rotate any credential that has been exposed in chat, logs, screenshots or source control.
+- Final client curriculum and reviewed quiz bank remain client content dependencies.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+See [LICENSE](LICENSE).

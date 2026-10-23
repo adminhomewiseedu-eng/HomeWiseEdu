@@ -12,7 +12,7 @@ const CHILD_COLORS = [
   { bg: '#DCFCE7', gradient: 'linear-gradient(90deg, var(--leaf), var(--sky))' },
 ];
 
-export default function ParentDashboardScreen({ parentId, onSelectChild, onAddChild, onViewPortfolio }) {
+export default function ParentDashboardScreen({ parentId, onSelectChild, onAddChild, onViewPortfolio, bibleStudy = false }) {
   const { data, loading, error, recStates, handleRecommendation, refetch } = useParentDashboard(parentId);
   const [editingChild, setEditingChild] = useState(null);
 
@@ -35,8 +35,8 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
   return (
     <div className="wrap">
       <div className="page-head">
-        <h1>Welcome, {parent_name} 👋</h1>
-        <p>{children.length ? "Manage your children's learning." : "Add your first child to get started."}</p>
+        <h1>{bibleStudy ? 'Bible Study' : 'Welcome'}, {parent_name} 👋</h1>
+        <p>{children.length ? (bibleStudy ? "Follow your children's Understanding The Word journey." : "Manage your children's learning.") : "Add your first child to get started."}</p>
       </div>
 
       <div style={{ margin: '20px 0' }}>
@@ -69,17 +69,24 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
           <div className="add-kid" onClick={onAddChild}>
             <div className="plus">+</div>
             <h3 style={{ color: 'var(--plum)', fontSize: 18 }}>Add a child</h3>
-            <p style={{ color: 'var(--ink-soft)', fontWeight: 600, marginTop: 3, fontSize: 14 }}>Set up their curriculum</p>
+            <p style={{ color: 'var(--ink-soft)', fontWeight: 600, marginTop: 3, fontSize: 14 }}>{bibleStudy ? 'Start Bible Study' : 'Set up their curriculum'}</p>
           </div>
         </div>
       </div>
 
-      {children.length > 0 && (
+      {children.length > 0 && !bibleStudy && (
         <div className="grid-3" style={{ marginBottom: 56 }}>
           <ParentLeftCol childrenList={children} weeklySummary={weekly_summary} recentEvidence={recent_evidence} onViewPortfolio={onViewPortfolio} />
           <ParentRightCol alerts={alerts} recommendations={recommendations} recStates={recStates} onRecommendationAction={handleRecommendation} />
         </div>
       )}
+      {children.length > 0 && bibleStudy && <div className="card pad bible-parent-summary">
+        <h3>📖 Understanding The Word</h3>
+        <p>Select a child above to view their current lesson, progress, evidence and student account.</p>
+        {recent_evidence.length > 0 ? <div className="bible-evidence-list" aria-label="Recent Bible Study evidence">
+          {recent_evidence.slice(0, 3).map((item, index) => <div className="ev-row" key={item.id || index}><span>✅</span><span className="et">{item.lesson_title || item.title || 'Learning evidence'}</span><span className="status-chip">{item.verified ? 'Verified' : 'In review'}</span></div>)}
+        </div> : <div className="bible-empty-evidence">No learning evidence yet. It will appear here after a lesson.</div>}
+      </div>}
       {editingChild && <EditChildModal child={editingChild} onClose={() => setEditingChild(null)} onSaved={refetch} />}
     </div>
   );
