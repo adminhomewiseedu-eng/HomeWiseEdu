@@ -124,6 +124,10 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
     legacy_lesson_numbers = {}
     for row_number, raw in enumerate(raw_rows, start=2):
         row = {_key(k): (v or "").strip() for k, v in raw.items() if k}
+        authored_week = row.get("curriculumweek", "")
+        if authored_week and (not re.fullmatch(r"[0-9]+", authored_week) or int(authored_week) < 1):
+            raise ValueError(f"Row {row_number}: Curriculum Week must be a positive whole number or blank")
+        row["_week"] = int(authored_week) if authored_week else None
         if legacy_format:
             legacy_key = (_key(row["subject"]), parse_int_safe(row["level"], -1), _key(row["unit"]), _key(row["lessontopic"]))
             if legacy_key not in legacy_lesson_numbers:
@@ -151,6 +155,8 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
         prepared_rows.append(row)
     for rows in grouped_rows.values():
         label = f"Lesson {rows[0]['_lesson_number']} ({rows[0]['lessontitle']})"
+        if len({row["_week"] for row in rows}) > 1:
+            raise ValueError(f"{label}: Curriculum Week must agree across all sessions")
         cadences, day_numbers = {row["_cadence"] for row in rows}, [row["_day_number"] for row in rows]
         if len(cadences) != 1:
             raise ValueError(f"{label}: cannot mix Weekly Lesson and multi-day rows")
@@ -241,6 +247,9 @@ def import_curriculum_csv_data(csv_text_or_file: str, db: Session) -> Dict[str, 
                 lesson.quiz_review_required = True
                 flagged_lessons.add(lesson.id)
         touched_lessons.add(lesson.id)
+        # Missing/blank metadata never guesses or erases a previously authored week.
+        if row["_week"] is not None:
+            lesson.curriculum_week = row["_week"]
 
         day = db.query(LessonDay).filter(LessonDay.lesson_id == lesson.id, LessonDay.day_number == day_number).first()
         created = day is None

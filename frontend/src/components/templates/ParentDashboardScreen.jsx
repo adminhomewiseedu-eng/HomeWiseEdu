@@ -4,6 +4,7 @@ import ParentLeftCol from '../molecules/ParentLeftCol';
 import ParentRightCol from '../molecules/ParentRightCol';
 import { useParentDashboard } from '../../hooks/useParentDashboard';
 import EditChildModal from '../organisms/EditChildModal';
+import LessonSelection from '../organisms/LessonSelection';
 
 const CHILD_COLORS = [
   { bg: '#DBEAFE', gradient: 'linear-gradient(90deg, var(--teal), var(--sky))' },
@@ -15,6 +16,7 @@ const CHILD_COLORS = [
 export default function ParentDashboardScreen({ parentId, onSelectChild, onAddChild, onViewPortfolio, bibleStudy = false }) {
   const { data, loading, error, recStates, handleRecommendation, refetch } = useParentDashboard(parentId);
   const [editingChild, setEditingChild] = useState(null);
+  const [planningChild, setPlanningChild] = useState('');
 
   if (loading) {
     return <div className="wrap pad" style={{ textAlign: 'center', padding: '100px 0' }}><h2>Loading dashboard...</h2></div>;
@@ -74,6 +76,10 @@ export default function ParentDashboardScreen({ parentId, onSelectChild, onAddCh
         </div>
       </div>
 
+      {children.length > 0 && !bibleStudy && <div className="lesson-plan-parent">
+        <label>Plan learning for<select value={planningChild} onChange={e => setPlanningChild(e.target.value)}><option value="">Choose a child</option>{children.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        {planningChild && <LessonSelection key={planningChild} childId={Number(planningChild)} planning />}
+      </div>}
       {children.length > 0 && !bibleStudy && (
         <div className="grid-3" style={{ marginBottom: 56 }}>
           <ParentLeftCol childrenList={children} weeklySummary={weekly_summary} recentEvidence={recent_evidence} onViewPortfolio={onViewPortfolio} />

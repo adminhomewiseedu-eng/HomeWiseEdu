@@ -17,6 +17,78 @@ from typing import Optional
 router = APIRouter(prefix="/api/parent", tags=["parent"])
 
 
+from datetime import date
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import IntegrityError
+from ..models import LessonAssignment
+from ..services.lesson_selection import homeschool_child, eligible_session, assignment_payloads
+
+
+class AssignmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lesson_id: int = Field(gt=0)
+    day_number: int = Field(gt=0)
+    scheduled_date: date
+    priority: int = Field(default=0, ge=0)
+
+
+class AssignmentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scheduled_date: date | None = None
+    priority: int | None = Field(default=None, ge=0)
+    cancelled: bool | None = None
+
+
+@router.get("/children/{child_id}/assignments")
+def list_assignments(child_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    homeschool_child(db, current_user, child_id, planning=True)
+    return assignment_payloads(db, current_user, child_id, include_unavailable=True)
+
+
+@router.post("/children/{child_id}/assignments")
+def create_assignment(child_id: int, payload: AssignmentCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    homeschool_child(db, current_user, child_id, planning=True)
+    eligible_session(db, current_user, child_id, payload.lesson_id, payload.day_number)
+    values = payload.model_dump()
+    values["scheduled_date"] = payload.scheduled_date.isoformat()
+    assignment = db.query(LessonAssignment).filter_by(child_id=child_id, lesson_id=payload.lesson_id,
+        day_number=payload.day_number, scheduled_date=values["scheduled_date"]).order_by(LessonAssignment.cancelled.asc()).first()
+    if assignment:
+        assignment.cancelled = False
+        assignment.priority = payload.priority
+    else:
+        assignment = LessonAssignment(child_id=child_id, assigned_by=current_user.id, **values)
+        db.add(assignment)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "This session is already assigned for that date")
+    return {"id": assignment.id}
+
+
+@router.patch("/children/{child_id}/assignments/{assignment_id}")
+def update_assignment(child_id: int, assignment_id: int, payload: AssignmentUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    homeschool_child(db, current_user, child_id, planning=True)
+    assignment = db.query(LessonAssignment).filter_by(id=assignment_id, child_id=child_id).first()
+    if not assignment:
+        raise HTTPException(404, "Assignment not found")
+    # Cancellation must remain possible after a lesson is unpublished or enrollment changes.
+    values = payload.model_dump(exclude_unset=True)
+    if any(value is None for value in values.values()):
+        raise HTTPException(422, "Assignment fields cannot be null")
+    if values != {"cancelled": True}:
+        eligible_session(db, current_user, child_id, assignment.lesson_id, assignment.day_number)
+    for key, value in values.items():
+        setattr(assignment, key, value.isoformat() if key == "scheduled_date" else value)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "This session is already assigned for that date")
+    return {"id": assignment.id, "cancelled": assignment.cancelled}
+
+
 def _require_parent(current_user: User) -> None:
     if current_user.role != "parent":
         raise HTTPException(status_code=403, detail="Parent access required")

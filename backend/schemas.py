@@ -233,6 +233,7 @@ class LessonSummaryOut(BaseModel):
     topic: Optional[str] = None
     order_num: int
     curriculum_country: Optional[str] = None
+    curriculum_week: Optional[int] = None
     archived: bool = False
     quiz_review_required: bool = False
     default_evidence_task: Optional[str] = None
@@ -246,6 +247,7 @@ class LessonDetailOut(BaseModel):
     topic: Optional[str] = None
     order_num: int
     curriculum_country: Optional[str] = None
+    curriculum_week: Optional[int] = None
     archived: bool = False
     quiz_review_required: bool = False
     objectives: List[str]

@@ -427,7 +427,7 @@ async def realtime_pedagogy_event(
     current_user: User = Depends(get_current_user),
 ):
     """Compact authoritative state bridge for the persistent Realtime classroom."""
-    child, lesson = authorize_child_lesson(db, current_user, payload.child_id, payload.lesson_id)
+    child, lesson = authorize_child_lesson(db, current_user, payload.child_id, payload.lesson_id, payload.day_number)
     if lesson.archived and current_user.role != "admin":
         raise HTTPException(status_code=404, detail="Lesson not found")
     active_day = next((day for day in lesson.days if day.day_number == payload.day_number), None)
@@ -566,7 +566,7 @@ async def tutor_chat_guidance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    child, lesson = authorize_child_lesson(db, current_user, req.child_id, req.lesson_id)
+    child, lesson = authorize_child_lesson(db, current_user, req.child_id, req.lesson_id, req.day_number)
     if lesson.archived and current_user.role != "admin":
         raise HTTPException(status_code=404, detail="Lesson not found")
     
@@ -750,7 +750,7 @@ def update_lesson_session(
     current_user: User = Depends(get_current_user)
 ):
     """Updates or creates a lightweight resumable lesson session."""
-    authorize_child_lesson(db, current_user, sess_in.child_id, sess_in.lesson_id)
+    authorize_child_lesson(db, current_user, sess_in.child_id, sess_in.lesson_id, sess_in.day_number)
     session = db.query(LessonSession).filter(
         LessonSession.child_id == sess_in.child_id,
         LessonSession.lesson_id == sess_in.lesson_id,
@@ -785,7 +785,7 @@ def get_lesson_session(
     current_user: User = Depends(get_current_user)
 ):
     """Retrieves existing resumable session if student returns to this lesson, discarding contaminated legacy history."""
-    authorize_child_lesson(db, current_user, child_id, lesson_id)
+    authorize_child_lesson(db, current_user, child_id, lesson_id, day_number)
     session = db.query(LessonSession).filter(
         LessonSession.child_id == child_id,
         LessonSession.lesson_id == lesson_id,
@@ -923,7 +923,7 @@ def get_quiz(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    _, lesson = authorize_child_lesson(db, current_user, child_id, lesson_id)
+    _, lesson = authorize_child_lesson(db, current_user, child_id, lesson_id, day_number)
     _require_published_day(lesson, day_number, current_user)
     _ready_session(db, child_id, lesson_id, day_number)
     questions = _quiz_questions_for_lesson(db, lesson)
@@ -941,7 +941,7 @@ def submit_quiz(
     if not submission_id or len(submission_id) > 64:
         raise HTTPException(status_code=422, detail="Invalid quiz submission ID")
 
-    child, lesson = authorize_child_lesson(db, current_user, sub.child_id, sub.lesson_id)
+    child, lesson = authorize_child_lesson(db, current_user, sub.child_id, sub.lesson_id, sub.day_number)
     _require_published_day(lesson, sub.day_number, current_user)
     
     existing_attempt = db.query(QuizAttempt).filter(QuizAttempt.submission_id == submission_id).first()

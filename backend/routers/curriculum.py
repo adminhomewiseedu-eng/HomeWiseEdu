@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from ..database import get_db
-from ..models import (Subject, Unit, Lesson, LessonDay, QuizQuestion, QuizAttempt,
+from ..models import (Subject, Unit, Lesson, LessonDay, LessonAssignment, QuizQuestion, QuizAttempt,
                       StudentProgress, LessonSession, LearningEvidence, AIInteraction)
 from ..schemas import SubjectOut, LessonDetailOut, LessonDayOut
 from ..models import User
@@ -72,7 +72,11 @@ def get_lesson_detail(
     lesson = authorize_lesson_for_user(db, current_user, lesson_id)
     # Quiz questions (and their answers) are available only through the
     # readiness-gated lesson quiz endpoint.
-    return LessonDetailOut.model_validate(lesson).model_copy(update={"quiz_questions": []})
+    detail = LessonDetailOut.model_validate(lesson)
+    updates = {"quiz_questions": []}
+    if current_user.role != "admin" and (current_user.programme or "homeschool") == "homeschool":
+        updates["days"] = [day for day in detail.days or [] if (day.status or "").lower() in PUBLISHED_STATUSES]
+    return detail.model_copy(update=updates)
 
 @router.post("/import-csv")
 async def import_curriculum_csv(
@@ -133,7 +137,7 @@ def list_admin_lessons(response: Response, db: Session = Depends(get_db), curren
     for lesson in lessons:
         cadence, expected_days = _cadence_metadata(lesson)
         result.append({
-        "id": lesson.id, "title": lesson.title, "subtopic": lesson.topic, "lesson_number": lesson.order_num,
+        "id": lesson.id, "title": lesson.title, "subtopic": lesson.topic, "lesson_number": lesson.order_num, "curriculum_week": lesson.curriculum_week,
         "unit": lesson.unit.title, "subject": lesson.unit.subject.title, "level": lesson.level,
         "curriculum_country": lesson.curriculum_country,
         "archived": lesson.archived, "quiz_review_required": lesson.quiz_review_required,
@@ -181,6 +185,7 @@ def update_lesson_day(day_id: int, payload: LessonDayUpdate, db: Session = Depen
 
 def _lesson_dependency_counts(db: Session, lesson_id: int) -> Dict[str, int]:
     return {
+        "lesson_assignments": db.query(LessonAssignment).filter(LessonAssignment.lesson_id == lesson_id).count(),
         "student_progress": db.query(StudentProgress).filter(StudentProgress.lesson_id == lesson_id).count(),
         "lesson_sessions": db.query(LessonSession).filter(LessonSession.lesson_id == lesson_id).count(),
         "learning_evidence": db.query(LearningEvidence).filter(LearningEvidence.lesson_id == lesson_id).count(),

@@ -171,6 +171,12 @@ export const studentAPI = {
   getDashboard: (childId = 1) => api.get(`/api/student/dashboard/${childId}`),
 };
 
+export const learningPlanAPI = {
+  browse: (childId) => api.get(`/api/student/${childId}/lesson-options`),
+  assign: (childId, payload) => api.post(`/api/parent/children/${childId}/assignments`, payload),
+  update: (childId, assignmentId, payload) => api.patch(`/api/parent/children/${childId}/assignments/${assignmentId}`, payload),
+};
+
 export const adminAPI = {
   getDashboard: () => api.get('/api/admin/dashboard'),
   getParents: (params = {}) => api.get('/api/admin/parents', { params }),

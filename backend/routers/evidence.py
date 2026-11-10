@@ -38,7 +38,7 @@ async def submit_evidence(
 ):
     lesson = None
     if lesson_id:
-        child, lesson = authorize_child_lesson(db, current_user, child_id, lesson_id)
+        child, lesson = authorize_child_lesson(db, current_user, child_id, lesson_id, day_number)
     else:
         child = authorize_child(db, current_user, child_id)
 
@@ -180,7 +180,7 @@ def download_evidence_file(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
     if evidence.lesson_id:
-        authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id)
+        authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id, historical=True)
     else:
         authorize_child(db, current_user, evidence.child_id)
     stored_name = getattr(evidence, "stored_file_name", None)
@@ -204,7 +204,7 @@ async def retry_evidence_evaluation(
     child = authorize_child(db, current_user, evidence.child_id)
     lesson = None
     if evidence.lesson_id:
-        child, lesson = authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id)
+        child, lesson = authorize_child_lesson(db, current_user, evidence.child_id, evidence.lesson_id, historical=True)
     if evidence.verified and evidence.score is not None:
         return evidence
 
@@ -273,7 +273,7 @@ def get_portfolio(
             authorized_items.append(evidence)
             continue
         try:
-            authorize_child_lesson(db, current_user, child_id, evidence.lesson_id)
+            authorize_child_lesson(db, current_user, child_id, evidence.lesson_id, historical=True)
             authorized_items.append(evidence)
         except HTTPException as exc:
             if exc.status_code not in {403, 404}:

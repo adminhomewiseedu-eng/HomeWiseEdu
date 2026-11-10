@@ -101,6 +101,8 @@ def authorize_child_lesson(
     current_user: User,
     child_id: int,
     lesson_id: int,
+    day_number: int | None = None,
+    *, historical: bool = False,
 ) -> tuple[Child, Lesson]:
     """Authorize ownership, enrollment, and programme access to a lesson."""
     child = authorize_child(db, current_user, child_id)
@@ -120,6 +122,15 @@ def authorize_child_lesson(
         raise HTTPException(status_code=403, detail="Student is not enrolled in this lesson subject")
     if effective_child_programme(child) == BIBLE_STUDY_PROGRAMME and subject.slug != BIBLE_SUBJECT_SLUG:
         raise HTTPException(status_code=403, detail="This lesson is not included in the Bible Study programme")
+    if effective_child_programme(child) == HOMESCHOOL_PROGRAMME and not historical:
+        if lesson.level != child.level:
+            raise HTTPException(status_code=403, detail="Lesson is not at this child's level")
+        if lesson.archived:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+        if day_number is not None:
+            day = next((d for d in lesson.days if d.day_number == day_number), None)
+            if day_number < 1 or (not lesson.days and day_number != 1) or (lesson.days and (not day or (day.status or "").lower() not in {"active", "published"})):
+                raise HTTPException(status_code=404, detail="Lesson day not found")
     return child, lesson
 
 
@@ -146,7 +157,10 @@ def authorize_lesson_for_user(db: Session, current_user: User, lesson_id: int) -
         enrolled = db.query(ChildSubject).join(Child).filter(
             Child.parent_id == current_user.id,
             ChildSubject.subject_id == subject.id,
-        ).first()
+        )
+        if programme == HOMESCHOOL_PROGRAMME:
+            enrolled = enrolled.filter(Child.level == lesson.level)
+        enrolled = enrolled.first()
         if not enrolled:
             raise HTTPException(status_code=403, detail="No child is enrolled in this lesson subject")
         return lesson

@@ -170,8 +170,10 @@ class Lesson(Base):
     topic = Column(String, nullable=True)
     order_num = Column(Integer, default=1)
     curriculum_country = Column(String, nullable=True)
+    curriculum_week = Column(Integer, nullable=True)
     archived = Column(Boolean, default=False, nullable=False)
     quiz_review_required = Column(Boolean, default=False, nullable=False)
+    __table_args__ = (CheckConstraint("curriculum_week IS NULL OR curriculum_week > 0", name="ck_lesson_curriculum_week"),)
     
     # Structured Lesson Summary Fields
     objectives = Column(JSON, default=list)
@@ -190,6 +192,25 @@ class Lesson(Base):
     progress_records = relationship("StudentProgress", back_populates="lesson")
     quiz_attempts = relationship("QuizAttempt", back_populates="lesson")
     sessions = relationship("LessonSession", back_populates="lesson", cascade="all, delete-orphan")
+
+
+class LessonAssignment(Base):
+    """A parent plan; completion remains owned by StudentProgress."""
+    __tablename__ = "lesson_assignments"
+    id = Column(Integer, primary_key=True)
+    child_id = Column(Integer, ForeignKey("children.id", ondelete="CASCADE"), nullable=False, index=True)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="RESTRICT"), nullable=False, index=True)
+    day_number = Column(Integer, nullable=False)
+    assigned_by = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    scheduled_date = Column(String(10), nullable=False)
+    priority = Column(Integer, nullable=False, default=0)
+    cancelled = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    __table_args__ = (
+        Index("uq_child_assignment_date", "child_id", "lesson_id", "day_number", "scheduled_date",
+              unique=True, postgresql_where=cancelled.is_(False), sqlite_where=cancelled.is_(False)),
+        CheckConstraint("day_number > 0 AND priority >= 0", name="ck_assignment_position"),
+    )
 
 
 class LessonDay(Base):

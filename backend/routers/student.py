@@ -11,6 +11,13 @@ router = APIRouter(prefix="/api/student", tags=["student"])
 PUBLISHED_STATUSES = {"active", "published"}
 
 
+@router.get("/{child_id}/lesson-options")
+def get_lesson_options(child_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from ..services.lesson_selection import lesson_options, assignment_payloads
+    return {"sessions": lesson_options(db, current_user, child_id),
+            "assignments": assignment_payloads(db, current_user, child_id, include_unavailable=current_user.role in {"parent", "admin"})}
+
+
 def _completed_lesson_ids(lessons, completed_pairs):
     return {lesson.id for lesson in lessons if (published := [
         day for day in lesson.days if (day.status or "").lower() in PUBLISHED_STATUSES
@@ -211,6 +218,15 @@ def get_student_dashboard(
         feedback_text = latest_ev.ai_feedback
     else:
         feedback_text = f"Welcome, {child.name}! Start your {level_label} lesson today to earn XP and build your learning portfolio! 🌟"
+
+    if effective_child_programme(child) == "homeschool":
+        from datetime import date
+        from ..services.lesson_selection import assignment_payloads
+        due = [item for item in assignment_payloads(db, current_user, child.id)
+               if item["status"] != "completed" and item["scheduled_date"] <= date.today().isoformat()]
+        if due:
+            today_lesson_payload = {**due[0], "order_num": due[0]["lesson_number"],
+                                   "completed": False, "xp_reward": 35}
 
     return {
         "id": child.id,

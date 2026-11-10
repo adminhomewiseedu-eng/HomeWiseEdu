@@ -105,7 +105,7 @@ async def create_realtime_session(
     current_user: User = Depends(get_current_user),
 ):
     """Mint a short-lived browser credential; the permanent key never leaves the server."""
-    child, lesson = authorize_child_lesson(db, current_user, req.child_id, req.lesson_id)
+    child, lesson = authorize_child_lesson(db, current_user, req.child_id, req.lesson_id, req.day_number)
     response.headers["Cache-Control"] = "no-store"
     if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="Realtime classroom is not configured")

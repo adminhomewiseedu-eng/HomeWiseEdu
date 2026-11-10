@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import SubjectProgressRow from '../molecules/SubjectProgressRow';
 import { useStudentDashboard } from '../../hooks/useStudentDashboard';
 import { bibleSubjectsOnly } from '../../utils/programmeRouting';
+import LessonSelection from '../organisms/LessonSelection';
 
 export default function StudentDashboardScreen({ child, onStartLesson, onStartQuiz, onViewPortfolio, onBackToParent, bibleStudy = false }) {
   const getStoredChildId = () => {
@@ -77,6 +78,7 @@ export default function StudentDashboardScreen({ child, onStartLesson, onStartQu
         </div>
       </div>
 
+      {!bibleStudy && <LessonSelection key={effectiveChildId} childId={effectiveChildId} onStartLesson={onStartLesson} />}
       <div className="grid-2" style={{ marginBottom: 20 }}>
         <div className="card pad">
           <div className="card-head"><h3>📅 Today's Lesson</h3></div>
