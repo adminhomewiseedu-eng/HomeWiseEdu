@@ -9,9 +9,9 @@ from sqlalchemy import text
 from .config import settings
 from .database import Base, SessionLocal, engine, ensure_db_schema
 from .routers import admin, auth, curriculum, evidence, lessons, parent, reports, student, voice
+from .services.recovery_schema import schema_is_compatible
 
 logger = logging.getLogger(__name__)
-MIGRATION_HEAD = "0013_programme_entitlements"
 
 if not settings.is_production and settings.AUTO_INIT_DB:
     Base.metadata.create_all(bind=engine)
@@ -57,8 +57,7 @@ def readiness_check():
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
             if settings.is_production:
-                revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-                if revision != MIGRATION_HEAD:
+                if not schema_is_compatible(db.connection()):
                     return JSONResponse(status_code=503, content={"status": "not_ready", "reason": "database migration required"})
     except Exception as exc:
         logger.warning("Readiness check failed type=%s", type(exc).__name__)

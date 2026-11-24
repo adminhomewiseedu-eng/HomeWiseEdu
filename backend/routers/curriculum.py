@@ -10,6 +10,7 @@ from ..models import User
 from .auth import (get_current_user, require_admin, authorize_lesson_for_user,
                    BIBLE_STUDY_PROGRAMME, BIBLE_SUBJECT_SLUG)
 from ..services.curriculum_importer import import_curriculum_csv_data
+from ..services.recovery_schema import recovery_lesson_dependencies
 import logging
 
 logger = logging.getLogger(__name__)
@@ -186,6 +187,7 @@ def _lesson_dependency_counts(db: Session, lesson_id: int) -> Dict[str, int]:
         "learning_evidence": db.query(LearningEvidence).filter(LearningEvidence.lesson_id == lesson_id).count(),
         "ai_interactions": db.query(AIInteraction).filter(AIInteraction.lesson_id == lesson_id).count(),
         "quiz_attempts": db.query(QuizAttempt).filter(QuizAttempt.lesson_id == lesson_id).count(),
+        **recovery_lesson_dependencies(db, lesson_id),
     }
 
 
